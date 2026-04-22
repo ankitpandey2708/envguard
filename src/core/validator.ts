@@ -1,5 +1,5 @@
 import { loadConfig, type Config, type KeyConfig } from './config.js';
-import { getProvider } from './registry.js';
+import { getProvider, listProviders } from './registry.js';
 import { httpRequest, type HttpRequest } from './httpClient.js';
 
 export type KeyStatus = 'ok' | 'invalid' | 'denied' | 'missing' | 'unknown';
@@ -76,8 +76,16 @@ export async function validateEnv(config?: Config): Promise<ValidationResult> {
   const cfg = config ?? await loadConfig();
   const { keys, concurrency } = cfg;
 
+  // Validate all providers exist — unregistered providers in config are a hard error
+  const available = await listProviders();
   for (const key of keys) {
-    await getProvider(key.provider);
+    if (!available.includes(key.provider)) {
+      throw new Error(
+        `Config references unregistered provider "${key.provider}" — cannot validate.\n` +
+        `Registered providers: ${available.join(', ') || '(none)'}.\n` +
+        `Remove the key from envguard.json or add a provider plugin.`
+      );
+    }
   }
 
   const results = await runConcurrent(

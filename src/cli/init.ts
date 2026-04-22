@@ -6,6 +6,7 @@ import { validateConfig, type Config } from '../core/config.js';
 interface InitResult {
   matched: ProviderSuggestion[];
   unmatched: string[];
+  unregistered: ProviderSuggestion[];
   added: string[];
   updated: boolean;
 }
@@ -58,6 +59,27 @@ export function getAllEnvVars(dir: string): Set<string> {
   return allEnvVars;
 }
 
+// Build error message when no registered API keys were found
+function buildNoKeysError(
+  envFiles: string[],
+  unregistered: ProviderSuggestion[],
+  unmatched: string[]
+): Error {
+  if (unregistered.length > 0) {
+    return new Error(
+      `No registered API keys detected in ${envFiles.join(', ')}.\n` +
+      `Detected ${unregistered.length} API key(s) for unregistered provider(s): ${unregistered.map(s => `${s.provider}`).join(', ')}\n` +
+      `Found ${unmatched.length} other unrecognized vars: ${unmatched.slice(0, 5).join(', ')}${unmatched.length > 5 ? '...' : ''}\n` +
+      `Create envguard.json manually (see README.md).`
+    );
+  }
+  return new Error(
+    `No API keys detected in ${envFiles.join(', ')}.\n` +
+    `Found ${unmatched.length} unrecognized vars: ${unmatched.slice(0, 5).join(', ')}${unmatched.length > 5 ? '...' : ''}\n` +
+    `Create envguard.json manually (see README.md).`
+  );
+}
+
 // Get current env vars from config
 function getConfigEnvVars(config: Config): Set<string> {
   return new Set(config.keys.map(k => k.envVar));
@@ -102,6 +124,11 @@ export async function initEnvguard(
     );
   }
   
+  // Separate suggestions into registered (to write in config) and unregistered (warnings only)
+  const suggestionsWithProvider = analysis.suggestions.filter(s => s.provider);
+  const registered = suggestionsWithProvider.filter(s => !s.unregistered);
+  const unregistered = suggestionsWithProvider.filter(s => s.unregistered);
+
   // Check if config file exists
   const configExists = existsSync(outPath);
   
@@ -110,18 +137,15 @@ export async function initEnvguard(
     const rawConfig = JSON.parse(readFileSync(outPath, 'utf-8'));
     const existingConfig = validateConfig(rawConfig);
     
-    // Find new vars to add
+    // Find new vars to add (only from registered providers)
     const newVars = findNewEnvVars(allEnvVars, existingConfig);
-    const newSuggestions = analysis.suggestions.filter(s => newVars.includes(s.envVar));
+    const newSuggestions = registered.filter(s => newVars.includes(s.envVar));
     
-    if (newSuggestions.length === 0 && analysis.suggestions.length === 0) {
-      throw new Error(
-        `No API keys detected in ${envFilesFound.join(', ')}.\n` +
-        `Your existing envguard.json is up-to-date.`
-      );
+    if (newSuggestions.length === 0 && registered.length === 0) {
+      throw buildNoKeysError(envFilesFound, unregistered, analysis.unmatched);
     }
     
-    // Merge: keep existing keys + add new ones
+    // Merge: keep existing keys + add new registered ones
     const existingKeys = existingConfig.keys.map(k => ({
       envVar: k.envVar,
       provider: k.provider,
@@ -130,7 +154,7 @@ export async function initEnvguard(
     
     const newKeys = newSuggestions.map(s => ({
       envVar: s.envVar,
-      provider: s.provider,
+      provider: s.provider!,
       required: false, // New keys default to not required
     }));
     
@@ -142,36 +166,34 @@ export async function initEnvguard(
     writeFileSync(outPath, JSON.stringify(mergedConfig, null, 2) + '\n');
     
     return {
-      matched: analysis.suggestions,
+      matched: registered,
       unmatched: analysis.unmatched,
+      unregistered,
       added: newSuggestions.map(s => s.envVar),
       updated: true,
     };
   } else {
-    // CREATE: Fresh config
-    if (analysis.suggestions.length === 0) {
-      throw new Error(
-        `No API keys detected in ${envFilesFound.join(', ')}.\n` +
-        `Found ${analysis.unmatched.length} unrecognized vars: ${analysis.unmatched.slice(0, 5).join(', ')}${analysis.unmatched.length > 5 ? '...' : ''}\n` +
-        `Create envguard.json manually (see README.md).`
-      );
+    // CREATE: Fresh config — only include registered providers
+    if (registered.length === 0) {
+      throw buildNoKeysError(envFilesFound, unregistered, analysis.unmatched);
     }
     
-    // Write fresh config
+    // Write fresh config — only registered providers
     const config = {
       concurrency: 5,
-      keys: analysis.suggestions.map(s => ({
+      keys: registered.map(s => ({
         envVar: s.envVar,
-        provider: s.provider,
+        provider: s.provider!,
       })),
     };
     
     writeFileSync(outPath, JSON.stringify(config, null, 2) + '\n');
     
     return {
-      matched: analysis.suggestions,
+      matched: registered,
       unmatched: analysis.unmatched,
-      added: analysis.suggestions.map(s => s.envVar),
+      unregistered,
+      added: registered.map(s => s.envVar),
       updated: false,
     };
   }

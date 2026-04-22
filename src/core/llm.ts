@@ -7,6 +7,7 @@ export interface ProviderSuggestion {
   envVar: string;
   provider: string | null;
   reason: string;
+  unregistered?: boolean;
 }
 
 interface LLMAnalysisResult {
@@ -28,9 +29,9 @@ function buildAnalysisPrompt(envVars: string[], providers: string[]): string {
 Given these environment variable names:
 ${envVars.map(v => `  - ${v}`).join('\n')}
 
-Available providers: ${providerList}
+Currently registered providers: ${providerList}
 
-For each env var, determine if it's an API key and which provider it belongs to. Consider:
+For each env var, determine if it's an API key and which provider it belongs to, even if that provider is not in the registered list above. Consider:
 - Variable name patterns (e.g., OPENAI_API_KEY → openai)
 - Known service names (e.g., STRIPE_SECRET_KEY → stripe)
 - Common naming conventions
@@ -39,12 +40,13 @@ Return a JSON object with this structure:
 {
   \"suggestions\": [
     {\"envVar\": \"OPENAI_API_KEY\", \"provider\": \"openai\", \"reason\": \"Standard OpenAI API key naming\"},
+    {\"envVar\": \"POSTHOG_PERSONAL_API_KEY\", \"provider\": \"posthog\", \"reason\": \"PostHog personal API key\"},
     {\"envVar\": \"MY_CUSTOM_KEY\", \"provider\": null, \"reason\": \"Unrecognized pattern\"}
   ],
   \"unmatched\": [\"MY_CUSTOM_KEY\"]
 }
 
-Only include matched vars in 'suggestions' with a valid provider. Unmatched vars go in 'unmatched'.`;
+Include any env var you can identify as an API key in 'suggestions', even if its provider is not in the registered list. Only put truly unrecognizable vars in 'unmatched'.`;
 }
 
 // Load package's own .env file for LLM API key
@@ -173,22 +175,19 @@ export async function analyzeEnvVarsWithLLM(
       throw new Error('Invalid LLM response format');
     }
 
-    // Filter to only known providers
-    const validSuggestions = result.suggestions.filter(
-      s => s.provider && providers.includes(s.provider)
-    );
+    // Mark suggestions whose provider isn't in the registry as unregistered,
+    // but keep them all — the user can decide what to do.
+    const allSuggestions = result.suggestions.map(s => ({
+      ...s,
+      unregistered: s.provider != null && !providers.includes(s.provider),
+    }));
 
-    // Collect unmatched from LLM response plus any we filtered out
+    // Collect unmatched vars (LLM couldn't identify as API keys)
     const llmUnmatched = result.unmatched || [];
-    const additionalUnmatched = result.suggestions
-      .filter(s => !s.provider || !providers.includes(s.provider))
-      .map(s => s.envVar);
-
-    const allUnmatched = [...new Set([...llmUnmatched, ...additionalUnmatched])];
 
     return {
-      suggestions: validSuggestions,
-      unmatched: allUnmatched,
+      suggestions: allSuggestions,
+      unmatched: llmUnmatched,
     };
   } catch (err) {
     throw new Error(

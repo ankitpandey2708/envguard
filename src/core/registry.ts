@@ -39,9 +39,21 @@ async function loadAllProviders(): Promise<Record<string, ProviderSpec>> {
 
 function discoverProviderIds(): string[] {
   try {
-    return readdirSync(getProvidersDir())
-      .filter(f => f.endsWith('.ts') && f !== 'index.ts')
-      .map(f => f.replace('.ts', ''));
+    const dir = getProvidersDir();
+    const files = readdirSync(dir);
+    // Support both source (.ts) and compiled (.js) environments
+    const providerFiles = files.filter(f =>
+      (f.endsWith('.ts') || f.endsWith('.js')) && !f.startsWith('index.') && !f.includes('.d.') && !f.endsWith('.map')
+    );
+    // Deduplicate by base name (e.g., gemini.ts and gemini.js → gemini)
+    const seen = new Set<string>();
+    return providerFiles
+      .map(f => f.replace(/\.(ts|js)$/, ''))
+      .filter(id => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
   } catch {
     return [];
   }

@@ -112,6 +112,14 @@ async function main(): Promise<void> {
     for (const key of result.matched) {
       process.stdout.write(`  ${key.envVar} → ${key.provider}\n`);
     }
+    if (result.unregistered.length > 0) {
+      process.stdout.write(`\n⚠ ${result.unregistered.length} key(s) use unregistered provider(s):\n`);
+      for (const s of result.unregistered) {
+        process.stdout.write(`  - ${s.envVar} → ${s.provider} (no validator available)\n`);
+      }
+      process.stdout.write(`  These keys were NOT added to envguard.json.\n`);
+      process.stdout.write(`  Request provider support: https://github.com/ankitpandey2708/envguard\n`);
+    }
     if (result.unmatched.length > 0) {
       process.stdout.write(`\nSkipped ${result.unmatched.length} non-API vars (or add manually):\n`);
       for (const v of result.unmatched.slice(0, 5)) {

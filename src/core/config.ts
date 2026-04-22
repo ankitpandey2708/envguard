@@ -41,7 +41,8 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     );
     if (!found) {
       throw new ConfigError(
-        `No config file found. Create one of: ${CONFIG_CANDIDATES.join(', ')}`
+        `No config file found. Create 'envguard.json':\n` +
+        `Run 'npx envguard init' to auto-generate, or create manually.`
       );
     }
     rawPath = resolve(process.cwd(), found);

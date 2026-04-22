@@ -20,18 +20,28 @@ envguard makes a lightweight request to each provider's API. If the key is rejec
 npm install @ankitpandey2708/envguard --save-dev
 ```
 
+The `postinstall` hook automatically adds `envguard validate` to your build script.
+
 Requires Node.js 20+.
 
 ## Usage
 
-Run envguard using `npx`:
+**From terminal:** (use `npx`)
 
 ```bash
-npx envguard validate
-npx envguard init
+npx envguard validate  # test keys
+npx envguard init     # generate config
 ```
 
-The `postinstall` hook automatically adds `envguard validate` to your build script.
+**In package.json scripts:**
+
+```json
+{
+  "scripts": {
+    "build": "envguard validate && next build"
+  }
+}
+```
 
 ## Quick start
 
@@ -76,7 +86,7 @@ In `package.json` scripts:
 ```json
 {
   "scripts": {
-    "build": "npx envguard validate && next build"
+    "build": "envguard validate && next build"
   }
 }
 ```
@@ -88,21 +98,19 @@ In `package.json` scripts:
 | `validate` | Validate API keys (default) |
 | `init` | Scan `.env` files and generate `envguard.json` |
 
-Run commands with `npx`:
-
 ```bash
-npx envguard validate   # validate keys (default)
-npx envguard init    # generate config
+envguard validate  # validate keys (default)
+envguard init      # generate config
 ```
 
 The `postinstall` hook automatically adds `envguard validate` to your build script.
 
-### `npx envguard validate`
+### `envguard validate`
 
 Checks all configured keys.
 
 ```bash
-npx envguard validate
+envguard validate
 ```
 
 **Output:**
@@ -114,12 +122,12 @@ npx envguard validate
 Deployment blocked: 1 required key failed.
 ```
 
-### `npx envguard init`
+### `envguard init`
 
 Scans `.env` files and creates `envguard.json`:
 
 ```bash
-npx envguard init
+envguard init
 ```
 
 Requires an OpenRouter API key (free at https://openrouter.ai/keys).
@@ -138,19 +146,19 @@ Requires an OpenRouter API key (free at https://openrouter.ai/keys).
 
 ```bash
 # Check all keys
-npx envguard validate
+envguard validate
 
 # Check one provider
-npx envguard validate --provider stripe
+envguard validate --provider stripe
 
 # JSON output for CI
-npx envguard validate --json
+envguard validate --json
 
 # Shell scripting
-npx envguard validate && echo Ready to deploy
+envguard validate && echo Ready to deploy
 
 # Auto-generate config
-npx envguard init
+envguard init
 ```
 
 ### Exit codes
@@ -228,7 +236,7 @@ Create `envguard.json` in your project root.
 
 ```yaml
 - name: Validate API keys
-  run: npx envguard validate
+  run: envguard validate
   env:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -238,14 +246,14 @@ Create `envguard.json` in your project root.
 
 Set as your Build Command:
 ```
-npx envguard validate && next build
+envguard validate && next build
 ```
 
 ### Render / Railway
 
 Build Command:
 ```
-npx envguard validate && npm run build
+envguard validate && npm run build
 ```
 
 ### Fly.io
@@ -253,7 +261,7 @@ npx envguard validate && npm run build
 In `fly.toml`:
 ```toml
 [deploy]
-  release_command = npx envguard validate
+  release_command = envguard validate
 ```
 
 ## Use in code

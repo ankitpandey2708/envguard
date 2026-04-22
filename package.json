@@ -1,6 +1,6 @@
 {
   "name": "@ankitpandey2708/envguard",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Validate third-party API keys at deploy time — fail fast before bad keys reach production",
   "type": "module",
   "main": "dist/index.js",

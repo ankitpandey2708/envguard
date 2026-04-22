@@ -4,8 +4,11 @@ import { resolve } from 'node:path';
 const GUARD_PREFIX = 'envguard validate && ';
 
 export function updateBuildScript(): void {
-  // Skip if we're developing envguard itself (no node_modules/envguard)
-  if (!existsSync(resolve(process.cwd(), 'node_modules', 'envguard'))) {
+  // Skip if we're developing envguard itself (no node_modules/envguard or scoped version)
+  const isInstalled =
+    existsSync(resolve(process.cwd(), 'node_modules', 'envguard')) ||
+    existsSync(resolve(process.cwd(), 'node_modules', '@ankitpandey2708', 'envguard'));
+  if (!isInstalled) {
     return;
   }
 

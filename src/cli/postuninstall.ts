@@ -5,7 +5,10 @@ const GUARD_PREFIX = 'envguard validate && ';
 
 export function removeBuildScriptGuard(): void {
   // Only run if envguard was just uninstalled (no longer in node_modules)
-  if (existsSync(resolve(process.cwd(), 'node_modules', 'envguard'))) {
+  const isStillInstalled =
+    existsSync(resolve(process.cwd(), 'node_modules', 'envguard')) ||
+    existsSync(resolve(process.cwd(), 'node_modules', '@ankitpandey2708', 'envguard'));
+  if (isStillInstalled) {
     return;
   }
 

@@ -12,7 +12,7 @@ export function updateBuildScript(): void {
 
   const projectRoot = getProjectRoot();
   const pkgPath = resolve(projectRoot, 'package.json');
-  
+
   if (!existsSync(pkgPath)) {
     return;
   }
@@ -29,7 +29,7 @@ export function updateBuildScript(): void {
   }
 
   const buildScript = pkg.scripts['build'];
-  
+
   if (!buildScript) {
     return;
   }
@@ -42,8 +42,7 @@ export function updateBuildScript(): void {
   // Update the build script
   pkg.scripts['build'] = GUARD_PREFIX + buildScript;
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-  
-  console.log('[envguard] ✓ Added envguard validate to build script');
+
 }
 
 // Run when script is executed directly

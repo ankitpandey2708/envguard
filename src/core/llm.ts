@@ -1,7 +1,7 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { listProvidersSync } from './registry.js';
+import { MANUAL_CONFIG_HINT } from './config.js';
+
+const LOG_DIVIDER = '-'.repeat(60);
 
 export interface ProviderSuggestion {
   envVar: string;
@@ -24,92 +24,57 @@ function getAvailableProviders(): string[] {
 function buildAnalysisPrompt(envVars: string[], providers: string[]): string {
   const providerList = providers.join(', ');
 
-  return `You are analyzing environment variable names to detect API keys and their providers.
+  // Build a fill-in-the-blank table that's hard for weak models to misinterpret
+  const rows = envVars.map(v => `  ${v}  ->  provider: ______  (or "unmatched")`).join('\n');
 
-Given these environment variable names:
-${envVars.map(v => `  - ${v}`).join('\n')}
-
-Currently registered providers: ${providerList}
-
-For each env var, determine if it's an API key and which provider it belongs to, even if that provider is not in the registered list above. Consider:
-- Variable name patterns (e.g., OPENAI_API_KEY → openai)
-- Known service names (e.g., STRIPE_SECRET_KEY → stripe)
-- Common naming conventions
-
-Return a JSON object with this structure:
-{
-  \"suggestions\": [
-    {\"envVar\": \"OPENAI_API_KEY\", \"provider\": \"openai\", \"reason\": \"Standard OpenAI API key naming\"},
-    {\"envVar\": \"POSTHOG_PERSONAL_API_KEY\", \"provider\": \"posthog\", \"reason\": \"PostHog personal API key\"},
-    {\"envVar\": \"MY_CUSTOM_KEY\", \"provider\": null, \"reason\": \"Unrecognized pattern\"}
-  ],
-  \"unmatched\": [\"MY_CUSTOM_KEY\"]
-}
-
-Include any env var you can identify as an API key in 'suggestions', even if its provider is not in the registered list. Only put truly unrecognizable vars in 'unmatched'.`;
-}
-
-// Load package's own .env file for LLM API key
-function loadPackageEnv(): Record<string, string> {
-  try {
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const envPath = resolve(__dirname, '../../.env');
-    if (existsSync(envPath)) {
-      const content = readFileSync(envPath, 'utf-8');
-      const vars: Record<string, string> = {};
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const [key, ...valueParts] = trimmed.split('=');
-        if (key && valueParts.length > 0) {
-          vars[key] = valueParts.join('=');
-        }
-      }
-      return vars;
-    }
-  } catch {
-    // Ignore errors reading package env
-  }
-  return {};
+  return [
+    'For each env var, fill in the provider (the SERVICE it belongs to).',
+    '',
+    'Env vars:',
+    rows,
+    '',
+    'Registered providers: ' + providerList,
+    '',
+    'RULE 1: An API key contains KEY, SECRET, or TOKEN in the name.',
+    '  Examples: GEMINI_API_KEY, OPENROUTER_API_KEY, UPSTASH_REDIS_REST_TOKEN, SARVAM_KEY',
+    'RULE 2: provider is ONE lowercase word = the service name.',
+    '  CORRECT: "posthog", "gemini", "openrouter", "upstash", "sarvam", "stripe", "turn"',
+    '  WRONG: "secret credential", "authentication", "api key", "credential"',
+    'RULE 3: These are NOT API keys -> put in unmatched:',
+    '  - *_MODEL (GEMINI_MODEL, SARVAM_MODEL, OPENROUTER_MODEL) -> config, not secrets',
+    '  - *_URL, *_HOST, *_ENDPOINT -> endpoints, not secrets',
+    '  - *_ENABLED, *_FLAG -> booleans, not secrets',
+    '  - *_USERNAME (without paired *_PASSWORD) -> not a secret alone',
+    'RULE 4: NEXT_PUBLIC_ prefix does NOT disqualify an API key.',
+    '  NEXT_PUBLIC_POSTHOG_KEY -> IS an API key, provider: "posthog"',
+    '  NEXT_PUBLIC_POSTHOG_ENABLED -> NOT an API key (boolean flag)',
+    '',
+    'Respond with ONLY valid JSON like this example:',
+    '{"suggestions":[{"envVar":"OPENAI_API_KEY","provider":"openai","reason":"API key"}],"unmatched":["OPENAI_MODEL","SOME_URL"]}',
+  ].join('\n');
 }
 
 // Shared instructions for how to set the API key
 const KEY_INSTRUCTIONS =
-  `Then either:
-  export OPENROUTER_API_KEY=sk_or_...
-  envguard init
-
-Or:
-  envguard init --api-key sk_or_...`;
+  `Then either:\n  export OPENROUTER_API_KEY=sk_or_...\n  envguard init\n\nOr:\n  envguard init --api-key sk_or_...`;
 
 async function callLLM(prompt: string, apiKey?: string): Promise<string> {
-  // Priority: explicit param > user env vars > package's own .env
-  const packageEnv = loadPackageEnv();
-  const key = apiKey || process.env.OPENROUTER_API_KEY || packageEnv.OPENROUTER_API_KEY;
+  // Priority: explicit param > user env vars
+  const key = apiKey || process.env.OPENROUTER_API_KEY;
 
   if (!key) {
     throw new Error(
-      `envguard init requires an OpenRouter API key to detect API keys in your .env files.
-
-` +
-      `Get a free key at: https://openrouter.ai/keys
-
-` +
-      `${KEY_INSTRUCTIONS}
-
-` +
-      `Alternatively, create envguard.json manually (see README.md).`
+      `envguard init requires an OpenRouter API key to detect API keys in your .env files.\n\n` +
+      `Get a free key at: https://openrouter.ai/keys\n\n` +
+      `${KEY_INSTRUCTIONS}\n\n` +
+      `Alternatively, ${MANUAL_CONFIG_HINT}`
     );
   }
 
   if (key.trim() === 'your_openrouter_api_key_here' || key.trim() === 'your_llm_api_key_here') {
     throw new Error(
-      `OPENROUTER_API_KEY appears to be a placeholder value.
-
-` +
-      `Get a real key at: https://openrouter.ai/keys
-
-` +
+      `OPENROUTER_API_KEY appears to be a placeholder value.\n\n` +
+      `Get a real key at: https://openrouter.ai/keys\n\n` +
       `${KEY_INSTRUCTIONS}`
     );
   }
@@ -125,14 +90,14 @@ async function callLLM(prompt: string, apiKey?: string): Promise<string> {
       messages: [
         {
           role: 'system',
-          content: 'You are a helpful assistant that analyzes environment variable names. Always respond with valid JSON.',
+          content: 'You fill in blanks. provider = one lowercase word (service name). NEVER multi-word descriptions like "secret credential". If var is not an API key (no KEY/SECRET/TOKEN in name), put it in unmatched. Respond with ONLY valid JSON.',
         },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      temperature: 0.1,
+      temperature: 0,
     }),
   });
 
@@ -153,6 +118,10 @@ export async function analyzeEnvVarsWithLLM(
   const prompt = buildAnalysisPrompt(envVars, providers);
 
   const response = await callLLM(prompt, apiKey);
+  console.error(LOG_DIVIDER);
+  console.error('[envguard] LLM request:', prompt);
+  console.error(LOG_DIVIDER);
+  console.error('[envguard] LLM response:', response);
 
   try {
     // Extract JSON from response (handle markdown code blocks)
@@ -175,19 +144,43 @@ export async function analyzeEnvVarsWithLLM(
       throw new Error('Invalid LLM response format');
     }
 
-    // Mark suggestions whose provider isn't in the registry as unregistered,
-    // but keep them all — the user can decide what to do.
-    const allSuggestions = result.suggestions.map(s => ({
+    // Filter out invalid suggestions where provider is null, "unknown", or multi-word descriptions
+    // (the LLM should put these in unmatched, but enforce it as a safety net)
+    const validSuggestions = result.suggestions.filter(
+      s => s.provider && s.provider !== 'unknown' && s.provider !== 'null' && s.provider !== 'unmatched' && !/\s/.test(s.provider)
+    );
+    const invalidSuggestions = result.suggestions.filter(
+      s => !s.provider || s.provider === 'unknown' || s.provider === 'null' || s.provider === 'unmatched' || /\s/.test(s.provider || '')
+    );
+
+    // Mark suggestions whose provider isn't in the registry as unregistered
+    const allSuggestions = validSuggestions.map(s => ({
       ...s,
-      unregistered: s.provider != null && !providers.includes(s.provider),
+      unregistered: !providers.includes(s.provider!),
     }));
 
-    // Collect unmatched vars (LLM couldn't identify as API keys)
+    // Collect unmatched: from LLM + any invalid suggestions we filtered out
     const llmUnmatched = result.unmatched || [];
+    const filteredOut = invalidSuggestions.map(s => s.envVar);
+
+    // Safety net: catch any env vars the LLM completely dropped
+    // (not in suggestions AND not in unmatched)
+    const classified = new Set([
+      ...allSuggestions.map(s => s.envVar),
+      ...llmUnmatched,
+      ...filteredOut,
+    ]);
+    const dropped = envVars.filter(v => !classified.has(v));
+    if (dropped.length > 0) {
+      console.error(LOG_DIVIDER);
+      console.error(`[envguard] LLM dropped ${dropped.length} var(s) (not in suggestions or unmatched): ${dropped.join(', ')}`);
+    }
+
+    const allUnmatched = [...new Set([...llmUnmatched, ...filteredOut, ...dropped])];
 
     return {
       suggestions: allSuggestions,
-      unmatched: llmUnmatched,
+      unmatched: allUnmatched,
     };
   } catch (err) {
     throw new Error(
@@ -196,3 +189,4 @@ export async function analyzeEnvVarsWithLLM(
     );
   }
 }
+

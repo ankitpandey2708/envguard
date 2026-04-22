@@ -20,6 +20,9 @@ const CONFIG_CANDIDATES = [
   'envguard.json',
 ];
 
+export const MANUAL_CONFIG_HINT =
+  'Create envguard.json manually: https://github.com/ankitpandey2708/envguard#quick-start';
+
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -41,9 +44,9 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     );
     if (!found) {
       throw new ConfigError(
-        `No config file found. Create 'envguard.json':\n` +
+        `No config file found. \n` +
         `Run 'npx envguard init --api-key <openrouter_key>' to auto-generate,\n` +
-        `or create manually: https://github.com/ankitpandey2708/envguard#quick-start`
+        `or ${MANUAL_CONFIG_HINT}`
       );
     }
     rawPath = resolve(process.cwd(), found);

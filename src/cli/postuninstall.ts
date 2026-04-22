@@ -12,7 +12,7 @@ export function removeBuildScriptGuard(): void {
 
   const projectRoot = getProjectRoot();
   const pkgPath = resolve(projectRoot, 'package.json');
-  
+
   if (!existsSync(pkgPath)) {
     return;
   }
@@ -29,7 +29,7 @@ export function removeBuildScriptGuard(): void {
   }
 
   const buildScript = pkg.scripts['build'];
-  
+
   // Only remove guard if it exists
   if (!buildScript || !buildScript.startsWith(GUARD_PREFIX)) {
     return;
@@ -38,8 +38,7 @@ export function removeBuildScriptGuard(): void {
   // Remove the guard prefix
   pkg.scripts['build'] = buildScript.slice(GUARD_PREFIX.length);
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-  
-  console.log('[envguard] ✓ Removed envguard validation from build script');
+
 }
 
 // Run when script is executed directly

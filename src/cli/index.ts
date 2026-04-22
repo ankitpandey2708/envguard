@@ -23,7 +23,6 @@ Options:
   --config <path>       path to config file (default: auto-detect envguard.json)
   --provider <id>       only validate keys for a specific provider
   --json                machine-readable JSON output
-  --debug               log request metadata (no secrets printed)
   -h, --help            show this help
 
 Exit codes:
@@ -38,13 +37,12 @@ interface CliOptions {
   provider?: string;
   apiKey?: string;
   json: boolean;
-  debug: boolean;
   help: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
   const args = argv.slice(2);
-  const opts: CliOptions = { command: '', json: false, debug: false, help: false };
+  const opts: CliOptions = { command: '', json: false, help: false };
 
   if (args[0] && !args[0].startsWith('-')) {
     opts.command = args.shift()!;
@@ -52,13 +50,12 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
-      case '--config':   opts.config   = args[++i]; break;
+      case '--config': opts.config = args[++i]; break;
       case '--provider': opts.provider = args[++i]; break;
-      case '--api-key':  opts.apiKey   = args[++i]; break;
-      case '--json':     opts.json     = true; break;
-      case '--debug':    opts.debug    = true; break;
+      case '--api-key': opts.apiKey = args[++i]; break;
+      case '--json': opts.json = true; break;
       case '--help':
-      case '-h':         opts.help     = true; break;
+      case '-h': opts.help = true; break;
     }
   }
 
@@ -107,30 +104,37 @@ async function main(): Promise<void> {
 
   if (opts.command === 'init') {
     const result = await initEnvguard(process.cwd(), opts.apiKey);
+    if (result.status === 'skipped') {
+      process.stdout.write(`envguard v${VERSION} — init\n\n`);
+      process.stdout.write(`No new env vars to add — envguard.json is up to date.\n`);
+      process.exit(0);
+    }
     process.stdout.write(`envguard v${VERSION} — init\n\n`);
     process.stdout.write(`Found ${result.matched.length} API key(s):\n`);
     for (const key of result.matched) {
       process.stdout.write(`  ${key.envVar} → ${key.provider}\n`);
     }
     if (result.unregistered.length > 0) {
-      process.stdout.write(`\n⚠ ${result.unregistered.length} key(s) use unregistered provider(s):\n`);
-      for (const s of result.unregistered) {
-        process.stdout.write(`  - ${s.envVar} → ${s.provider} (no validator available)\n`);
+      const uniqueProviders = [...new Set(result.unregistered.map(s => s.provider!))];
+      process.stdout.write(`\n⚠ ${result.unregistered.length} key(s) use ${uniqueProviders.length} unregistered provider(s):\n`);
+      for (const provider of uniqueProviders) {
+        const keys = result.unregistered.filter(s => s.provider === provider);
+        process.stdout.write(`  ${provider} (${keys.length} key${keys.length === 1 ? '' : 's'}):\n`);
+        for (const k of keys) {
+          process.stdout.write(`    - ${k.envVar}\n`);
+        }
       }
       process.stdout.write(`  These keys were NOT added to envguard.json.\n`);
       process.stdout.write(`  Request provider support: https://github.com/ankitpandey2708/envguard\n`);
     }
     if (result.unmatched.length > 0) {
-      process.stdout.write(`\nSkipped ${result.unmatched.length} non-API vars (or add manually):\n`);
-      for (const v of result.unmatched.slice(0, 5)) {
+      process.stdout.write(`\nSkipped ${result.unmatched.length} non-API vars :\n`);
+      for (const v of result.unmatched) {
         process.stdout.write(`  ${v}\n`);
       }
-      if (result.unmatched.length > 5) {
-        process.stdout.write(`  ... and ${result.unmatched.length - 5} more\n`);
-      }
     }
-    if (result.updated) {
-      process.stdout.write(`\nUpdated envguard.json (added ${result.added.length} new key(s))\n`);
+    if (result.status === 'updated') {
+      process.stdout.write(`\nUpdated envguard.json (added ${result.matched.length} new key(s))\n`);
     } else {
       process.stdout.write(`\nCreated envguard.json\n`);
     }
@@ -159,11 +163,8 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  // Auto-load env vars from .env files before validation
-  const loadedCount = loadEnvFiles(process.cwd());
-  if (loadedCount > 0 && opts.debug) {
-    process.stderr.write(`[envguard] Loaded ${loadedCount} env var(s) from .env file(s)\n`);
-  }
+  // Auto-load only the env vars listed in config (minimal memory footprint)
+  loadEnvFiles(process.cwd(), config);
 
   // Check for unknown env vars (not in config but exist in .env)
   const allEnvVars = getAllEnvVars(process.cwd());
@@ -171,11 +172,8 @@ async function main(): Promise<void> {
 
   if (unknownVars.length > 0 && !opts.json) {
     process.stdout.write(`\n⚠️  ${unknownVars.length} key(s) in .env but not in config:\n`);
-    for (const v of unknownVars.slice(0, 10)) {
+    for (const v of unknownVars) {
       process.stdout.write(`  - ${v}\n`);
-    }
-    if (unknownVars.length > 10) {
-      process.stdout.write(`  ... and ${unknownVars.length - 10} more\n`);
     }
     process.stdout.write(`\n  Run 'envguard init' to add them automatically.\n\n`);
   }
@@ -190,7 +188,7 @@ async function main(): Promise<void> {
 
   if (opts.json) {
     // Add unknown vars to JSON output for scripts/CI
-    const jsonOutput = unknownVars.length > 0 
+    const jsonOutput = unknownVars.length > 0
       ? { ...result, unknownVars }
       : result;
     process.stdout.write(JSON.stringify(jsonOutput, null, 2) + '\n');

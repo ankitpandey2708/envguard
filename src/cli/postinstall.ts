@@ -45,3 +45,6 @@ export function updateBuildScript(): void {
   
   console.log('[envguard] ✓ Added envguard validate to build script');
 }
+
+// Run when script is executed directly
+updateBuildScript();

@@ -41,3 +41,6 @@ export function removeBuildScriptGuard(): void {
   
   console.log('[envguard] ✓ Removed envguard validation from build script');
 }
+
+// Run when script is executed directly
+removeBuildScriptGuard();

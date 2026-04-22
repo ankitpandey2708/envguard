@@ -42,7 +42,8 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     if (!found) {
       throw new ConfigError(
         `No config file found. Create 'envguard.json':\n` +
-        `Run 'npx envguard init' to auto-generate, or create manually.`
+        `Run 'npx envguard init --api-key <openrouter_key>' to auto-generate,\n` +
+        `or create manually (see README.md).`
       );
     }
     rawPath = resolve(process.cwd(), found);

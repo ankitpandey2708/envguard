@@ -4,11 +4,19 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Get the project root by walking up from the script's location.
- * Script location: node_modules/@scope/pkg/dist/cli/shared.js
- * Walks up: shared.js -> dist/cli -> dist -> @scope/pkg -> node_modules -> project root (5 levels)
+ * Traverses parent directories until it finds package.json.
+ * Robust against file structure changes.
  */
 export function getProjectRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../..');
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (dir !== dirname(dir)) { // stop at filesystem root
+    if (existsSync(resolve(dir, 'package.json'))) {
+      return dir;
+    }
+    dir = dirname(dir);
+  }
+  // Fallback: return current directory if no package.json found
+  return dir;
 }
 
 /**

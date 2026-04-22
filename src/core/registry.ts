@@ -24,8 +24,13 @@ async function loadAllProviders(): Promise<Record<string, ProviderSpec>> {
   
   const results = await Promise.all(
     ids.map(async (id) => {
-      const mod = await import(`../providers/${id}.js`) as { provider?: ProviderSpec; default?: ProviderSpec };
-      const provider = mod.provider || mod.default;
+      const mod = await import(`../providers/${id}.js`) as Record<string, unknown>;
+      // Convention: each provider file exports `${id}Provider` (e.g. geminiProvider)
+      // Fall back to generic names, then scan all exports for a ProviderSpec shape
+      const provider = (mod[`${id}Provider`] ?? mod.provider ?? mod.default ??
+        Object.values(mod).find((v): v is ProviderSpec =>
+          v != null && typeof v === 'object' && 'id' in v && typeof (v as ProviderSpec).id === 'string'
+        )) as ProviderSpec | undefined;
       return provider && typeof provider.id === 'string' ? [id, provider] as const : null;
     })
   );

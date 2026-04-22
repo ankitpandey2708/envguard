@@ -48,7 +48,7 @@ function parseEnvFile(filePath: string): string[] {
   return envVars;
 }
 
-export function getAllEnvVars(dir: string): Set<string> {
+function getAllEnvVars(dir: string): Set<string> {
   const envFiles = scanEnvFiles(dir);
   const allEnvVars = new Set<string>();
   for (const file of envFiles) {
@@ -231,11 +231,6 @@ export async function initEnvguard(
       status: 'created',
     };
   }
-}
-
-// Warn about unknown vars (for validate command)
-export function checkForUnknownVars(envVars: Set<string>, config: Config): string[] {
-  return findNewEnvVars(envVars, config);
 }
 
 // Load env vars from .env files into process.env

@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { loadConfig, ConfigError, type Config } from '../core/config.js';
 import { validateEnv, type ValidationResult } from '../core/validator.js';
-import { initEnvguard, getAllEnvVars, checkForUnknownVars, loadEnvFiles } from './init.js';
+import { initEnvguard, loadEnvFiles } from './init.js';
 
 const pkg = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')
@@ -166,18 +166,6 @@ async function main(): Promise<void> {
   // Auto-load only the env vars listed in config (minimal memory footprint)
   loadEnvFiles(process.cwd(), config);
 
-  // Check for unknown env vars (not in config but exist in .env)
-  const allEnvVars = getAllEnvVars(process.cwd());
-  const unknownVars = allEnvVars.size > 0 ? checkForUnknownVars(allEnvVars, config) : [];
-
-  if (unknownVars.length > 0 && !opts.json) {
-    process.stdout.write(`\n⚠️  ${unknownVars.length} key(s) in .env but not in config:\n`);
-    for (const v of unknownVars) {
-      process.stdout.write(`  - ${v}\n`);
-    }
-    process.stdout.write(`\n  Run 'envguard init' to add them automatically.\n\n`);
-  }
-
   let result: ValidationResult;
   try {
     result = await validateEnv(config);
@@ -187,11 +175,7 @@ async function main(): Promise<void> {
   }
 
   if (opts.json) {
-    // Add unknown vars to JSON output for scripts/CI
-    const jsonOutput = unknownVars.length > 0
-      ? { ...result, unknownVars }
-      : result;
-    process.stdout.write(JSON.stringify(jsonOutput, null, 2) + '\n');
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } else {
     printHuman(result);
   }

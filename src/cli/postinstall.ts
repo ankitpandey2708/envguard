@@ -1,18 +1,27 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const GUARD_PREFIX = 'envguard validate && ';
 
+// Get project root from the script's location (node_modules/@scope/pkg/dist/cli/postinstall.js)
+function getProjectRoot(): string {
+  // Go up: postinstall.js -> dist/cli -> @scope/pkg -> node_modules -> project root
+  return resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+}
+
 export function updateBuildScript(): void {
+  const projectRoot = getProjectRoot();
+
   // Skip if we're developing envguard itself (no node_modules/envguard or scoped version)
   const isInstalled =
-    existsSync(resolve(process.cwd(), 'node_modules', 'envguard')) ||
-    existsSync(resolve(process.cwd(), 'node_modules', '@ankitpandey2708', 'envguard'));
+    existsSync(resolve(projectRoot, 'node_modules', 'envguard')) ||
+    existsSync(resolve(projectRoot, 'node_modules', '@ankitpandey2708', 'envguard'));
   if (!isInstalled) {
     return;
   }
 
-  const pkgPath = resolve(process.cwd(), 'package.json');
+  const pkgPath = resolve(projectRoot, 'package.json');
   
   if (!existsSync(pkgPath)) {
     return;

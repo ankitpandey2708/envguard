@@ -15,7 +15,7 @@ let _providers: Record<string, ProviderSpec> | null = null;
 
 function getProvidersDir(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  return join(__dirname, '../../providers');
+  return join(__dirname, '../providers');
 }
 
 // Load all providers in parallel

@@ -47,9 +47,10 @@ function discoverProviderIds(): string[] {
   }
 }
 
-// Synchronous access (returns empty if called before first async access)
+// Synchronous access - discovers and returns provider IDs without loading full specs
 export function listProvidersSync(): string[] {
-  return _providers ? Object.keys(_providers) : [];
+  if (_providers) return Object.keys(_providers);
+  return discoverProviderIds();
 }
 
 // Async access - initializes cache if needed

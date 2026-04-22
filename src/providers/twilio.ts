@@ -1,20 +1,16 @@
 import type { ProviderSpec } from '../core/registry.js';
 
 // Twilio auth token validation uses HTTP Basic auth: AccountSid:AuthToken.
-// Provide accountSid via options.accountSid or the TWILIO_ACCOUNT_SID env var.
+// Provide accountSid via the TWILIO_ACCOUNT_SID env var.
 export const twilioProvider: ProviderSpec = {
   id: 'twilio',
   displayName: 'Twilio',
-  defaultTimeoutMs: 5000,
-  buildRequest(envValue, options) {
-    const accountSid =
-      (options?.accountSid as string | undefined) ??
-      process.env['TWILIO_ACCOUNT_SID'] ??
-      '';
+  buildRequest(envValue) {
+    const accountSid = process.env['TWILIO_ACCOUNT_SID'] ?? '';
 
     if (!accountSid) {
       throw new Error(
-        'Twilio provider requires options.accountSid or TWILIO_ACCOUNT_SID env var'
+        'Twilio provider requires TWILIO_ACCOUNT_SID env var'
       );
     }
 

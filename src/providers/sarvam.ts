@@ -3,7 +3,6 @@ import type { ProviderSpec } from '../core/registry.js';
 export const sarvamProvider: ProviderSpec = {
   id: 'sarvam',
   displayName: 'Sarvam AI',
-  defaultTimeoutMs: 5000,
   buildRequest(envValue) {
     return {
       url: 'https://api.sarvam.ai/translate',

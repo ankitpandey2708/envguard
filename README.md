@@ -1,42 +1,67 @@
 # envguard
 
-Validate third-party API keys at deploy time — fail fast before bad keys reach production.
+Validate API keys before deployment — catch revoked or misconfigured keys before they break production.
 
-## The Problem
+## Why envguard?
 
-Existing env validation tools (`envalid`, `env-var`, etc.) only check if a key is **present** and **formatted correctly**. They don't verify the key is **actually accepted** by the provider.
+Most tools only check if an API key *exists*. They can't tell you if the key is actually valid.
 
-A revoked or mis-scoped key looks valid until it hits production and starts returning 401s to real users.
+```
+✓ Key exists          ← Most tools stop here
+✗ Key is revoked      ← envguard catches this
+✗ Key has wrong scope ← envguard catches this
+```
 
-## How It Works
+envguard makes a lightweight request to each provider's API. If the key is rejected, your build fails immediately — not when it hits production.
 
-`envguard` pings each provider's cheapest validation endpoint at build/startup time. If any required key returns 401 or 403, the process exits with a non-zero code — blocking the deployment before it goes live.
-
-All calls go **directly to providers**. No envguard cloud service, no secrets sent anywhere else.
-
-## Installation
+## Install
 
 ```bash
 npm install envguard --save-dev
 ```
 
-## Quick Start
+Requires Node.js 20+.
 
-**1. Create `envguard.json` in your project root:**
+## Quick start
+
+### Option 1: Auto-detect your keys
+
+```bash
+envguard init
+```
+
+This scans your `.env` files, detects API keys, and creates `envguard.json` for you.
+
+**Example output:**
+```
+Found 3 API key(s):
+  OPENAI_API_KEY → openai
+  STRIPE_SECRET_KEY → stripe
+  ANTHROPIC_API_KEY → anthropic
+
+Created envguard.json
+Run 'envguard validate' to test your keys.
+```
+
+You'll need an OpenRouter API key for the detection (free). Get one at https://openrouter.ai/keys, then set it via `--api-key` flag or `OPENROUTER_API_KEY` environment variable.
+
+### Option 2: Create config manually
+
+Create `envguard.json` in your project root:
 
 ```json
 {
   "keys": [
-    { "envVar": "OPENAI_API_KEY",    "provider": "openai",    "required": true },
-    { "envVar": "ANTHROPIC_API_KEY", "provider": "anthropic", "required": true },
-    { "envVar": "STRIPE_SECRET_KEY", "provider": "stripe",    "required": true },
-    { "envVar": "GEMINI_API_KEY",    "provider": "gemini",    "required": false }
+    { "envVar": "OPENAI_API_KEY", "provider": "openai" },
+    { "envVar": "STRIPE_SECRET_KEY", "provider": "stripe" },
+    { "envVar": "TWILIO_AUTH_TOKEN", "provider": "twilio", "required": false }
   ]
 }
 ```
 
-**2. Add to your build:**
+### Add to your build
 
+In `package.json` scripts:
 ```json
 {
   "scripts": {
@@ -45,109 +70,67 @@ npm install envguard --save-dev
 }
 ```
 
----
-
 ## Commands
 
 ### `envguard validate`
 
-Validates all keys defined in the config. This is the only command.
+Checks all configured keys.
 
 ```bash
 envguard validate
 ```
 
-**All flags:**
+**Output:**
+```
+✔ STRIPE_SECRET_KEY: OK
+✖ OPENAI_API_KEY: INVALID
+! GEMINI_API_KEY: MISSING (optional)
+
+Deployment blocked: 1 required key failed.
+```
+
+### Flags
 
 | Flag | Description |
 |---|---|
-| `--config <path>` | Path to config file. Default: auto-detects `envguard.json` in project root |
-| `--context <name>` | Only validate keys whose `context` field matches this value |
-| `--provider <id>` | Only validate keys for this provider (e.g. `openai`, `stripe`) |
-| `--strict` | Treat optional key failures as fatal (overrides `failOnWarning: false` in config) |
-| `--json` | Print results as JSON instead of human-readable output |
-| `--debug` | Print request metadata — URLs, methods, redacted headers (no secrets) |
-| `-h`, `--help` | Show help |
+| `--config <path>` | Use a different config file |
+| `--provider <id>` | Check only one provider |
+| `--json` | JSON output (for scripts) |
+| `--debug` | Show which endpoints are called |
+| `-h` | Show help |
 
----
+### Examples
 
-### Common usage patterns
-
-**Validate everything (default):**
 ```bash
+# Check all keys
 envguard validate
-```
 
-**Block deploy if even optional keys fail:**
-```bash
-envguard validate --strict
-```
-
-**Only check payment keys:**
-```bash
-envguard validate --context payments
-```
-
-**Only check a specific provider:**
-```bash
+# Check one provider
 envguard validate --provider stripe
-```
 
-**Use a custom config path:**
-```bash
-envguard validate --config ./config/keys.json
-```
-
-**Machine-readable output (for scripts/CI parsing):**
-```bash
+# JSON output for CI
 envguard validate --json
-```
 
-**Combine filters:**
-```bash
-envguard validate --context backend --provider openai --strict
-```
+# Shell scripting
+envguard validate && echo Ready to deploy
 
-**One-off check without installing (via npx):**
-```bash
+# Try without installing
 npx envguard validate
 ```
 
-**Conditional in shell scripts:**
-```bash
-envguard validate && echo "Keys OK, deploying..." || echo "Key validation failed"
-```
-
----
-
 ### Exit codes
 
-| Code | Meaning |
-|---|---|
-| `0` | All required keys passed |
-| `1` | At least one required key failed (missing, invalid, or denied) |
-| `2` | Config error or internal error (bad config file, unknown provider, etc.) |
+- `0` — All required keys valid
+- `1` — Validation failed
+- `2` — Config error
 
----
+### JSON output
 
-### Example output
+Use `--json` for machine-readable output in scripts:
 
+```bash
+envguard validate --json
 ```
-envguard v0.1.0 — validating API keys...
-
-✔ STRIPE_SECRET_KEY (Stripe): OK
-✖ OPENAI_API_KEY (OpenAI): INVALID – provider returned HTTP 401
-! GEMINI_API_KEY (Google Gemini): MISSING – environment variable not set (optional)
-
-Summary:
-  Passed:   1
-  Failed:   1
-  Warnings: 1
-
-Deployment blocked: 1 required key failed validation.
-```
-
-### JSON output (`--json`)
 
 ```json
 {
@@ -156,82 +139,95 @@ Deployment blocked: 1 required key failed validation.
     { "envVar": "STRIPE_SECRET_KEY", "provider": "Stripe", "status": "ok", "required": true }
   ],
   "failed": [
-    { "envVar": "OPENAI_API_KEY", "provider": "OpenAI", "status": "invalid", "required": true, "message": "provider returned HTTP 401" }
+    { "envVar": "OPENAI_API_KEY", "provider": "OpenAI", "status": "invalid", "required": true }
   ],
-  "warnings": [
-    { "envVar": "GEMINI_API_KEY", "provider": "Google Gemini", "status": "missing", "required": false, "message": "environment variable not set" }
+  "warnings": []
+}
+```
+
+## Supported providers
+
+| Provider | ID |
+|---|---|
+| OpenAI | `openai` |
+| Anthropic | `anthropic` |
+| Google Gemini | `gemini` |
+| Stripe | `stripe` |
+| Twilio | `twilio` |
+| Sarvam AI | `sarvam` |
+
+All providers work with just the API key. Twilio requires additional configuration:
+
+### Twilio setup
+
+Twilio requires your Account SID. Set the `TWILIO_ACCOUNT_SID` environment variable:
+
+```bash
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+## Config file
+
+Create `envguard.json` in your project root.
+
+```json
+{
+  "concurrency": 5,
+  "keys": [
+    { "envVar": "OPENAI_API_KEY", "provider": "openai" },
+    { "envVar": "STRIPE_SECRET_KEY", "provider": "stripe" },
+    { "envVar": "ANTHROPIC_API_KEY", "provider": "anthropic", "required": false }
   ]
 }
 ```
 
----
+**Options:**
+- `concurrency` — How many checks to run in parallel (default: 5)
+- `keys[].envVar` — Environment variable name
+- `keys[].provider` — Provider ID from the table above
+- `keys[].required` — Whether to block deployment if key fails (default: true)
 
-## Config reference
+## CI/CD
 
-Auto-detected filenames (in order): `envguard.json`, `envguard.yml`, `envguard.yaml`, `envguard.js`, `envguard.cjs`
+### GitHub Actions
 
 ```yaml
-# envguard.yml
-timeoutMs: 4000       # per-request timeout in ms (default: 4000)
-concurrency: 5        # max parallel validation requests (default: 5)
-failOnWarning: false  # treat optional failures as fatal (default: false)
-
-keys:
-  - envVar: OPENAI_API_KEY
-    provider: openai
-    required: true          # default: true — omit to make required
-    context: backend        # optional label, used with --context flag
-
-  - envVar: STRIPE_SECRET_KEY
-    provider: stripe
-    required: true
-    context: payments
-
-  - envVar: TWILIO_AUTH_TOKEN
-    provider: twilio
-    required: false
-    options:
-      accountSid: ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX  # or set TWILIO_ACCOUNT_SID env var
-
-  - envVar: MY_CUSTOM_API_KEY
-    provider: my-api        # matches an entry in providerOverrides below
-    required: true
-
-providerOverrides:
-  - id: my-api
-    endpoint: https://api.example.com/v1/whoami
-    method: GET
-    authPlacement: bearer   # bearer | basic | header | query
-    successCodes: [200]
-    timeoutMs: 3000
-    headers:
-      X-Client: envguard    # static headers (use {{API_KEY}} to inject the key value)
+- name: Validate API keys
+  run: npx envguard validate
+  env:
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
 ```
 
----
+### Vercel
 
-## Supported providers
+Set as your Build Command:
+```
+npx envguard validate && next build
+```
 
-| Provider      | ID          | Validation endpoint               |
-|---|---|---|
-| OpenAI        | `openai`    | `GET /v1/models`                  |
-| Anthropic     | `anthropic` | `POST /v1/messages` (1 token)     |
-| Google Gemini | `gemini`    | `GET /v1beta/models`              |
-| Stripe        | `stripe`    | `GET /v1/charges?limit=1`         |
-| Twilio        | `twilio`    | `GET /2010-04-01/Accounts/{sid}`  |
-| Sarvam AI     | `sarvam`    | `POST /translate`                 |
-| Custom HTTP   | any string  | configured via `providerOverrides` |
+### Render / Railway
 
----
+Build Command:
+```
+npx envguard validate && npm run build
+```
 
-## Node API
+### Fly.io
 
-Use `validateEnv` when you want to run validation programmatically (e.g. at server startup) without calling `process.exit` yourself.
+In `fly.toml`:
+```toml
+[deploy]
+  release_command = npx envguard validate
+```
 
-```ts
+## Use in code
+
+Import envguard in your application:
+
+```typescript
 import { validateEnv } from 'envguard';
 
-// Loads envguard.json automatically
 const result = await validateEnv();
 
 if (!result.ok) {
@@ -240,67 +236,45 @@ if (!result.ok) {
 }
 ```
 
-```ts
-// Pass config directly — no file needed
+Or pass config directly:
+
+```typescript
 const result = await validateEnv({
   keys: [
-    { envVar: 'OPENAI_API_KEY', provider: 'openai', required: true },
-    { envVar: 'STRIPE_SECRET_KEY', provider: 'stripe', required: true },
-  ],
-  timeoutMs: 5000,
-  concurrency: 3,
-  failOnWarning: false,
+    { envVar: 'OPENAI_API_KEY', provider: 'openai' },
+    { envVar: 'STRIPE_SECRET_KEY', provider: 'stripe' }
+  ]
 });
-
-console.log(result.passed);   // KeyValidationResult[]
-console.log(result.failed);   // KeyValidationResult[]
-console.log(result.warnings); // KeyValidationResult[]
 ```
 
----
+## Status meanings
 
-## CI/CD integration
+| Status | What it means |
+|---|---|
+| OK | Key is valid and working |
+| INVALID | Key was rejected (revoked, wrong scope) |
+| MISSING | Environment variable not set |
+| UNKNOWN | Network error or provider issue |
 
-### GitHub Actions
+## Troubleshooting
 
-```yaml
-- name: Validate API keys
-  run: npx envguard validate --strict
-  env:
-    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-    STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-```
+**Key shows INVALID**
+- Check if the key was revoked or regenerated
+- Verify the key has the correct permissions/scopes
 
-### Vercel
+**Key shows UNKNOWN**
+- Network issue or provider is down
+- Try again or check your firewall
 
-```bash
-# Build Command in Vercel dashboard:
-npx envguard validate --strict && next build
-```
-
-### Render / Railway
-
-```bash
-# Build Command:
-npx envguard validate --strict && npm run build
-```
-
-### Fly.io
-
-```toml
-# fly.toml
-[deploy]
-  release_command = "npx envguard validate --strict"
-```
-
----
+**Config not found**
+- Ensure `envguard.json` exists in your project root
+- Use `--config` to specify a different path
 
 ## Security
 
-- Secrets are **never logged** — `--debug` prints only URLs, methods, and redacted headers.
-- No outbound calls to any envguard service — validation goes directly to each provider.
-- Network errors and timeouts mark keys as `unknown`; required keys in that state fail the deployment by default (safe).
-- Provider 5xx responses trigger one automatic retry with a 300ms delay before failing.
+- Your API keys are never logged or sent anywhere except the respective provider
+- `--debug` shows URLs and methods but no secrets
+- No external service calls — all validation goes directly to providers
 
 ## License
 

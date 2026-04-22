@@ -3,7 +3,6 @@ import type { ProviderSpec } from '../core/registry.js';
 export const openaiProvider: ProviderSpec = {
   id: 'openai',
   displayName: 'OpenAI',
-  defaultTimeoutMs: 5000,
   buildRequest(envValue) {
     return {
       url: 'https://api.openai.com/v1/models',

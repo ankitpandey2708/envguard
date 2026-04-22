@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { loadConfig, ConfigError, type Config } from '../core/config.js';
 import { validateEnv, type ValidationResult } from '../core/validator.js';
+import { initEnvguard } from './init.js';
 
 const pkg = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')
@@ -12,37 +13,38 @@ const HELP = `
 envguard v${VERSION} — validate API keys before deployment
 
 Usage:
-  envguard validate [options]
+  envguard <command> [options]
+
+Commands:
+  validate               Validate API keys (default)
+  init                   Scan .env files and generate envguard.json
 
 Options:
-  --config <path>       path to config file (default: auto-detect envguard.config.*)
-  --context <name>      only validate keys matching this context label
+  --config <path>       path to config file (default: auto-detect envguard.json)
   --provider <id>       only validate keys for a specific provider
   --json                machine-readable JSON output
-  --strict              treat optional key failures as fatal (failOnWarning=true)
   --debug               log request metadata (no secrets printed)
   -h, --help            show this help
 
 Exit codes:
-  0  all required keys passed
-  1  at least one required key failed
+  0  success
+  1  validation failed or keys not matched
   2  config or internal error
 `.trimStart();
 
 interface CliOptions {
   command: string;
   config?: string;
-  context?: string;
   provider?: string;
+  apiKey?: string;
   json: boolean;
-  strict: boolean;
   debug: boolean;
   help: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
   const args = argv.slice(2);
-  const opts: CliOptions = { command: '', json: false, strict: false, debug: false, help: false };
+  const opts: CliOptions = { command: '', json: false, debug: false, help: false };
 
   if (args[0] && !args[0].startsWith('-')) {
     opts.command = args.shift()!;
@@ -51,10 +53,9 @@ function parseArgs(argv: string[]): CliOptions {
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--config':   opts.config   = args[++i]; break;
-      case '--context':  opts.context  = args[++i]; break;
       case '--provider': opts.provider = args[++i]; break;
+      case '--api-key':  opts.apiKey   = args[++i]; break;
       case '--json':     opts.json     = true; break;
-      case '--strict':   opts.strict   = true; break;
       case '--debug':    opts.debug    = true; break;
       case '--help':
       case '-h':         opts.help     = true; break;
@@ -99,12 +100,33 @@ function printHuman(result: ValidationResult): void {
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv);
 
-  if (opts.help || !opts.command) {
+  if (opts.help || opts.command === 'help') {
     process.stdout.write(HELP + '\n');
     process.exit(0);
   }
 
-  if (opts.command !== 'validate') {
+  if (opts.command === 'init') {
+    const result = await initEnvguard(process.cwd(), opts.apiKey);
+    process.stdout.write(`envguard v${VERSION} — init\n\n`);
+    process.stdout.write(`Found ${result.matched.length} API key(s):\n`);
+    for (const key of result.matched) {
+      process.stdout.write(`  ${key.envVar} → ${key.provider}\n`);
+    }
+    if (result.unmatched.length > 0) {
+      process.stdout.write(`\nSkipped ${result.unmatched.length} non-API vars (or add manually):\n`);
+      for (const v of result.unmatched.slice(0, 5)) {
+        process.stdout.write(`  ${v}\n`);
+      }
+      if (result.unmatched.length > 5) {
+        process.stdout.write(`  ... and ${result.unmatched.length - 5} more\n`);
+      }
+    }
+    process.stdout.write(`\nCreated envguard.json\n`);
+    process.stdout.write(`Run 'envguard validate' to test your keys.\n`);
+    process.exit(0);
+  }
+
+  if (opts.command && opts.command !== 'validate') {
     process.stderr.write(`Unknown command: ${opts.command}\n\n${HELP}\n`);
     process.exit(2);
   }
@@ -118,9 +140,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  if (opts.context) config = { ...config, keys: config.keys.filter(k => k.context === opts.context) };
   if (opts.provider) config = { ...config, keys: config.keys.filter(k => k.provider === opts.provider) };
-  if (opts.strict)   config = { ...config, failOnWarning: true };
 
   if (config.keys.length === 0) {
     process.stderr.write('[envguard] No keys matched the given filters — nothing to validate.\n');

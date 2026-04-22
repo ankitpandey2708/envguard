@@ -3,7 +3,6 @@ import type { ProviderSpec } from '../core/registry.js';
 export const stripeProvider: ProviderSpec = {
   id: 'stripe',
   displayName: 'Stripe',
-  defaultTimeoutMs: 5000,
   buildRequest(envValue) {
     return {
       url: 'https://api.stripe.com/v1/charges?limit=1',

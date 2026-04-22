@@ -3,7 +3,6 @@ import type { ProviderSpec } from '../core/registry.js';
 export const geminiProvider: ProviderSpec = {
   id: 'gemini',
   displayName: 'Google Gemini',
-  defaultTimeoutMs: 5000,
   buildRequest(envValue) {
     return {
       url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(envValue)}`,

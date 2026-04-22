@@ -3,7 +3,6 @@ import type { ProviderSpec } from '../core/registry.js';
 export const anthropicProvider: ProviderSpec = {
   id: 'anthropic',
   displayName: 'Anthropic',
-  defaultTimeoutMs: 8000,
   buildRequest(envValue) {
     return {
       url: 'https://api.anthropic.com/v1/messages',

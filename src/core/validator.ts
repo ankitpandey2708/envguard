@@ -1,6 +1,6 @@
-import { loadConfig, type Config, type KeyConfig, type ProviderOverride } from './config.js';
+import { loadConfig, type Config, type KeyConfig } from './config.js';
 import { getProvider } from './registry.js';
-import { httpRequestWithRetry, type HttpRequest } from './httpClient.js';
+import { httpRequest, type HttpRequest } from './httpClient.js';
 
 export type KeyStatus = 'ok' | 'invalid' | 'denied' | 'missing' | 'unknown';
 
@@ -20,11 +20,9 @@ export interface ValidationResult {
 }
 
 async function validateKey(
-  keyCfg: KeyConfig,
-  overrides: ProviderOverride[],
-  timeoutMs: number
+  keyCfg: KeyConfig
 ): Promise<KeyValidationResult> {
-  const provider = getProvider(keyCfg.provider, overrides);
+  const provider = getProvider(keyCfg.provider);
   const envValue = process.env[keyCfg.envVar];
 
   if (!envValue) {
@@ -33,13 +31,13 @@ async function validateKey(
 
   let req: HttpRequest;
   try {
-    req = provider.buildRequest(envValue, keyCfg.options);
+    req = provider.buildRequest(envValue);
   } catch (err) {
     return { envVar: keyCfg.envVar, provider: provider.displayName, status: 'unknown', required: keyCfg.required, message: err instanceof Error ? err.message : String(err) };
   }
 
   try {
-    const res = await httpRequestWithRetry(req, timeoutMs);
+    const res = await httpRequest(req);
     const status = provider.interpretResponse(res.status);
     return {
       envVar: keyCfg.envVar,
@@ -49,13 +47,12 @@ async function validateKey(
       message: status !== 'ok' ? `provider returned HTTP ${res.status}` : undefined,
     };
   } catch (err) {
-    const isTimeout = err instanceof Error && err.name === 'AbortError';
     return {
       envVar: keyCfg.envVar,
       provider: provider.displayName,
       status: 'unknown',
       required: keyCfg.required,
-      message: isTimeout ? `request timed out after ${timeoutMs}ms` : err instanceof Error ? err.message : String(err),
+      message: err instanceof Error ? err.message : String(err),
     };
   }
 }
@@ -77,14 +74,14 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
 
 export async function validateEnv(config?: Config): Promise<ValidationResult> {
   const cfg = config ?? await loadConfig();
-  const { keys, providerOverrides = [], timeoutMs, concurrency, failOnWarning } = cfg;
+  const { keys, concurrency } = cfg;
 
   for (const key of keys) {
-    getProvider(key.provider, providerOverrides);
+    getProvider(key.provider);
   }
 
   const results = await runConcurrent(
-    keys.map(key => () => validateKey(key, providerOverrides, timeoutMs)),
+    keys.map(key => () => validateKey(key)),
     concurrency
   );
 
@@ -94,7 +91,7 @@ export async function validateEnv(config?: Config): Promise<ValidationResult> {
 
   for (const result of results) {
     if (result.status === 'ok') passed.push(result);
-    else if (!result.required && !failOnWarning) warnings.push(result);
+    else if (!result.required) warnings.push(result);
     else failed.push(result);
   }
 

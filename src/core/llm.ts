@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { builtInProviders } from './registry.js';
+import { listProvidersSync } from './registry.js';
 
 export interface ProviderSuggestion {
   envVar: string;
@@ -14,9 +14,9 @@ interface LLMAnalysisResult {
   unmatched: string[];
 }
 
-// Get available provider IDs from the registry
+// Get available provider IDs from the registry (sync, may be empty if not initialized)
 function getAvailableProviders(): string[] {
-  return Object.keys(builtInProviders);
+  return listProvidersSync();
 }
 
 // Build the prompt for LLM analysis

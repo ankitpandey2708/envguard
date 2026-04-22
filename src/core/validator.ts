@@ -22,7 +22,7 @@ export interface ValidationResult {
 async function validateKey(
   keyCfg: KeyConfig
 ): Promise<KeyValidationResult> {
-  const provider = getProvider(keyCfg.provider);
+  const provider = await getProvider(keyCfg.provider);
   const envValue = process.env[keyCfg.envVar];
 
   if (!envValue) {
@@ -77,7 +77,7 @@ export async function validateEnv(config?: Config): Promise<ValidationResult> {
   const { keys, concurrency } = cfg;
 
   for (const key of keys) {
-    getProvider(key.provider);
+    await getProvider(key.provider);
   }
 
   const results = await runConcurrent(

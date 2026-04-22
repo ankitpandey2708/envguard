@@ -9,13 +9,13 @@ export interface ProviderSuggestion {
   reason: string;
 }
 
-export interface LLMAnalysisResult {
+interface LLMAnalysisResult {
   suggestions: ProviderSuggestion[];
   unmatched: string[];
 }
 
 // Get available provider IDs from the registry
-export function getAvailableProviders(): string[] {
+function getAvailableProviders(): string[] {
   return Object.keys(builtInProviders);
 }
 
@@ -80,7 +80,7 @@ const KEY_INSTRUCTIONS =
 Or:
   envguard init --api-key sk_or_...`;
 
-export async function callLLM(prompt: string, apiKey?: string): Promise<string> {
+async function callLLM(prompt: string, apiKey?: string): Promise<string> {
   // Priority: explicit param > user env vars > package's own .env
   const packageEnv = loadPackageEnv();
   const key = apiKey || process.env.OPENROUTER_API_KEY || packageEnv.OPENROUTER_API_KEY;

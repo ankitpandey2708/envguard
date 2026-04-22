@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { loadConfig, ConfigError, type Config } from '../core/config.js';
 import { validateEnv, type ValidationResult } from '../core/validator.js';
-import { initEnvguard } from './init.js';
+import { initEnvguard, getAllEnvVars, checkForUnknownVars, loadEnvFiles } from './init.js';
 
 const pkg = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')
@@ -121,7 +121,11 @@ async function main(): Promise<void> {
         process.stdout.write(`  ... and ${result.unmatched.length - 5} more\n`);
       }
     }
-    process.stdout.write(`\nCreated envguard.json\n`);
+    if (result.updated) {
+      process.stdout.write(`\nUpdated envguard.json (added ${result.added.length} new key(s))\n`);
+    } else {
+      process.stdout.write(`\nCreated envguard.json\n`);
+    }
     process.stdout.write(`Run 'envguard validate' to test your keys.\n`);
     process.exit(0);
   }
@@ -147,6 +151,27 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
+  // Auto-load env vars from .env files before validation
+  const loadedCount = loadEnvFiles(process.cwd());
+  if (loadedCount > 0 && opts.debug) {
+    process.stderr.write(`[envguard] Loaded ${loadedCount} env var(s) from .env file(s)\n`);
+  }
+
+  // Check for unknown env vars (not in config but exist in .env)
+  const allEnvVars = getAllEnvVars(process.cwd());
+  const unknownVars = allEnvVars.size > 0 ? checkForUnknownVars(allEnvVars, config) : [];
+
+  if (unknownVars.length > 0 && !opts.json) {
+    process.stdout.write(`\n⚠️  ${unknownVars.length} key(s) in .env but not in config:\n`);
+    for (const v of unknownVars.slice(0, 10)) {
+      process.stdout.write(`  - ${v}\n`);
+    }
+    if (unknownVars.length > 10) {
+      process.stdout.write(`  ... and ${unknownVars.length - 10} more\n`);
+    }
+    process.stdout.write(`\n  Run 'envguard init' to add them automatically.\n\n`);
+  }
+
   let result: ValidationResult;
   try {
     result = await validateEnv(config);
@@ -156,7 +181,11 @@ async function main(): Promise<void> {
   }
 
   if (opts.json) {
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    // Add unknown vars to JSON output for scripts/CI
+    const jsonOutput = unknownVars.length > 0 
+      ? { ...result, unknownVars }
+      : result;
+    process.stdout.write(JSON.stringify(jsonOutput, null, 2) + '\n');
   } else {
     printHuman(result);
   }

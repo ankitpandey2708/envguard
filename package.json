@@ -21,7 +21,9 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "node --test dist/test/**/*.js",
-    "knip": "knip"
+    "knip": "knip",
+    "postinstall": "node dist/cli/postinstall.js",
+    "postuninstall": "node dist/cli/postuninstall.js"
   },
   "keywords": [
     "env",

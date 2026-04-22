@@ -2,5 +2,9 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "tags": [
     "-lintignore"
+  ],
+  "entry": [
+    "src/cli/postinstall.ts",
+    "src/cli/postuninstall.ts"
   ]
 }

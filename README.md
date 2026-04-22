@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ankitpandey2708/envguard)
+
 # envguard
 
 Validate API keys before deployment — catch revoked or misconfigured keys before they break production.

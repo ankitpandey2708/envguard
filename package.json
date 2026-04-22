@@ -1,0 +1,50 @@
+{
+  "name": "envguard",
+  "version": "0.1.0",
+  "description": "Validate third-party API keys at deploy time — fail fast before bad keys reach production",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "envguard": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --test dist/test/**/*.js",
+    "knip": "knip"
+  },
+  "keywords": [
+    "env",
+    "api-key",
+    "validation",
+    "deployment",
+    "preflight",
+    "ci",
+    "vercel",
+    "render",
+    "fly"
+  ],
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22",
+    "knip": "^6.6.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  }
+}

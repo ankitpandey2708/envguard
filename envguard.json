@@ -1,0 +1,12 @@
+{
+  "timeoutMs": 4000,
+  "concurrency": 5,
+  "failOnWarning": false,
+  "keys": [
+    { "envVar": "OPENAI_API_KEY",    "provider": "openai",    "required": true,  "context": "backend" },
+    { "envVar": "ANTHROPIC_API_KEY", "provider": "anthropic", "required": true,  "context": "backend" },
+    { "envVar": "GEMINI_API_KEY",    "provider": "gemini",    "required": false, "context": "backend" },
+    { "envVar": "STRIPE_SECRET_KEY", "provider": "stripe",    "required": true,  "context": "payments" },
+    { "envVar": "SARVAM_KEY",        "provider": "sarvam",    "required": false, "context": "ai" }
+  ]
+}

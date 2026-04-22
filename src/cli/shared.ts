@@ -4,11 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Get the project root by walking up from the script's location.
- * Script location: node_modules/@scope/pkg/dist/cli/postinstall.js
- * Walks up: postinstall.js -> dist/cli -> @scope/pkg -> node_modules -> project root
+ * Script location: node_modules/@scope/pkg/dist/cli/shared.js
+ * Walks up: shared.js -> dist/cli -> dist -> @scope/pkg -> node_modules -> project root (5 levels)
  */
 export function getProjectRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+  return resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../..');
 }
 
 /**

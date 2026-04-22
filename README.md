@@ -17,17 +17,28 @@ envguard makes a lightweight request to each provider's API. If the key is rejec
 ## Install
 
 ```bash
-npm install envguard --save-dev
+npm install @ankitpandey2708/envguard --save-dev
 ```
 
 Requires Node.js 20+.
+
+## Usage
+
+Run envguard using `npx`:
+
+```bash
+npx envguard validate
+npx envguard init
+```
+
+The `postinstall` hook automatically adds `envguard validate` to your build script.
 
 ## Quick start
 
 ### Option 1: Auto-detect your keys
 
 ```bash
-envguard init
+npx envguard init
 ```
 
 This scans your `.env` files, detects API keys, and creates `envguard.json` for you.
@@ -40,7 +51,7 @@ Found 3 API key(s):
   ANTHROPIC_API_KEY → anthropic
 
 Created envguard.json
-Run 'envguard validate' to test your keys.
+Run 'npx envguard validate' to test your keys.
 ```
 
 You'll need an OpenRouter API key for the detection (free). Get one at https://openrouter.ai/keys, then set it via `--api-key` flag or `OPENROUTER_API_KEY` environment variable.
@@ -65,19 +76,33 @@ In `package.json` scripts:
 ```json
 {
   "scripts": {
-    "build": "envguard validate && next build"
+    "build": "npx envguard validate && next build"
   }
 }
 ```
 
 ## Commands
 
-### `envguard validate`
+| Command | Description |
+|---|---|
+| `validate` | Validate API keys (default) |
+| `init` | Scan `.env` files and generate `envguard.json` |
+
+Run commands with `npx`:
+
+```bash
+npx envguard validate   # validate keys (default)
+npx envguard init    # generate config
+```
+
+The `postinstall` hook automatically adds `envguard validate` to your build script.
+
+### `npx envguard validate`
 
 Checks all configured keys.
 
 ```bash
-envguard validate
+npx envguard validate
 ```
 
 **Output:**
@@ -88,6 +113,16 @@ envguard validate
 
 Deployment blocked: 1 required key failed.
 ```
+
+### `npx envguard init`
+
+Scans `.env` files and creates `envguard.json`:
+
+```bash
+npx envguard init
+```
+
+Requires an OpenRouter API key (free at https://openrouter.ai/keys).
 
 ### Flags
 
@@ -103,19 +138,19 @@ Deployment blocked: 1 required key failed.
 
 ```bash
 # Check all keys
-envguard validate
+npx envguard validate
 
 # Check one provider
-envguard validate --provider stripe
+npx envguard validate --provider stripe
 
 # JSON output for CI
-envguard validate --json
+npx envguard validate --json
 
 # Shell scripting
-envguard validate && echo Ready to deploy
+npx envguard validate && echo Ready to deploy
 
-# Try without installing
-npx envguard validate
+# Auto-generate config
+npx envguard init
 ```
 
 ### Exit codes

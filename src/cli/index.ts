@@ -22,6 +22,8 @@ Commands:
 Options:
   --config <path>       path to config file (default: auto-detect envguard.json)
   --provider <id>       only validate keys for a specific provider
+  --api-key <key>       OpenRouter API key for init (or set OPENROUTER_API_KEY)
+  --model <id>          OpenRouter model for init (or set OPENROUTER_MODEL; default: openrouter/free)
   --json                machine-readable JSON output
   -h, --help            show this help
 
@@ -36,6 +38,7 @@ interface CliOptions {
   config?: string;
   provider?: string;
   apiKey?: string;
+  model?: string;
   json: boolean;
   help: boolean;
 }
@@ -53,6 +56,7 @@ function parseArgs(argv: string[]): CliOptions {
       case '--config': opts.config = args[++i]; break;
       case '--provider': opts.provider = args[++i]; break;
       case '--api-key': opts.apiKey = args[++i]; break;
+      case '--model': opts.model = args[++i]; break;
       case '--json': opts.json = true; break;
       case '--help':
       case '-h': opts.help = true; break;
@@ -103,7 +107,7 @@ async function main(): Promise<void> {
   }
 
   if (opts.command === 'init') {
-    const result = await initEnvguard(process.cwd(), opts.apiKey);
+    const result = await initEnvguard(process.cwd(), opts.apiKey, undefined, opts.model);
     if (result.status === 'skipped') {
       process.stdout.write(`envguard v${VERSION} — init\n\n`);
       process.stdout.write(`No new env vars to add — envguard.json is up to date.\n`);

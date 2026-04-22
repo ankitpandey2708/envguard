@@ -101,7 +101,8 @@ function findNewEnvVars(envVars: Set<string>, config: Config): string[] {
 export async function initEnvguard(
   dir: string,
   apiKey?: string,
-  outputPath?: string
+  outputPath?: string,
+  model?: string,
 ): Promise<InitResult> {
   const targetDir = dir || process.cwd();
   const outPath = outputPath || resolve(targetDir, 'envguard.json');
@@ -150,7 +151,7 @@ export async function initEnvguard(
   console.error('[envguard] Analyzing env vars with AI...');
   let analysis;
   try {
-    analysis = await analyzeEnvVarsWithLLM(varsToAnalyze, apiKey);
+    analysis = await analyzeEnvVarsWithLLM(varsToAnalyze, apiKey, model);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     throw new Error(

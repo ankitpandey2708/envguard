@@ -34,6 +34,14 @@ npx envguard init --api-key YOUR_OPENROUTER_API_KEY
 
 Scans `.env` files, detects API keys via AI, and generates the config. Requires a free OpenRouter key from https://openrouter.ai/keys.
 
+Optionally specify a model (defaults to `openrouter/free`):
+
+```bash
+npx envguard init --api-key YOUR_OPENROUTER_API_KEY --model google/gemini-2.0-flash-001
+```
+
+Or set `OPENROUTER_MODEL` in your environment.
+
 On re-run, only *new* env vars are sent to the LLM — already-configured keys are skipped.
 
 **First run:**
@@ -97,6 +105,8 @@ Deployment blocked: 1 required key failed.
 |---|---|
 | `--config <path>` | Use a different config file |
 | `--provider <id>` | Check only one provider |
+| `--api-key <key>` | OpenRouter API key for `init` (or set `OPENROUTER_API_KEY`) |
+| `--model <id>` | OpenRouter model for `init` (or set `OPENROUTER_MODEL`; default: `openrouter/free`) |
 | `--json` | JSON output for scripts/CI — see [JSON output](#json-output) |
 | `-h` | Show help |
 

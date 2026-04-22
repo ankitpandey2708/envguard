@@ -58,9 +58,10 @@ function buildAnalysisPrompt(envVars: string[], providers: string[]): string {
 const KEY_INSTRUCTIONS =
   `Then either:\n  export OPENROUTER_API_KEY=sk_or_...\n  envguard init\n\nOr:\n  envguard init --api-key sk_or_...`;
 
-async function callLLM(prompt: string, apiKey?: string): Promise<string> {
+async function callLLM(prompt: string, apiKey?: string, model?: string): Promise<string> {
   // Priority: explicit param > user env vars
   const key = apiKey || process.env.OPENROUTER_API_KEY;
+  const resolvedModel = model || process.env.OPENROUTER_MODEL || 'openrouter/free';
 
   if (!key) {
     throw new Error(
@@ -79,6 +80,7 @@ async function callLLM(prompt: string, apiKey?: string): Promise<string> {
     );
   }
 
+  console.error(`[envguard] LLM model: ${resolvedModel}`);
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -86,7 +88,7 @@ async function callLLM(prompt: string, apiKey?: string): Promise<string> {
       'Authorization': `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: 'openrouter/free',
+      model: resolvedModel,
       messages: [
         {
           role: 'system',
@@ -112,12 +114,13 @@ async function callLLM(prompt: string, apiKey?: string): Promise<string> {
 
 export async function analyzeEnvVarsWithLLM(
   envVars: string[],
-  apiKey?: string
+  apiKey?: string,
+  model?: string,
 ): Promise<LLMAnalysisResult> {
   const providers = getAvailableProviders();
   const prompt = buildAnalysisPrompt(envVars, providers);
 
-  const response = await callLLM(prompt, apiKey);
+  const response = await callLLM(prompt, apiKey, model);
   console.error(LOG_DIVIDER);
   console.error('[envguard] LLM request:', prompt);
   console.error(LOG_DIVIDER);

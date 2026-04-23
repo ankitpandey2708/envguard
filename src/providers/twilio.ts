@@ -1,4 +1,5 @@
 import type { ProviderSpec } from '../core/registry.js';
+import { defaultInterpretResponse } from '../core/registry.js';
 
 // Twilio auth token validation uses HTTP Basic auth: AccountSid:AuthToken.
 // Provide accountSid via the TWILIO_ACCOUNT_SID env var.
@@ -21,10 +22,5 @@ export const twilioProvider: ProviderSpec = {
       headers: { Authorization: `Basic ${credentials}` },
     };
   },
-  interpretResponse(status) {
-    if (status === 200) return 'ok';
-    if (status === 401) return 'invalid';
-    if (status === 403) return 'denied';
-    return 'unknown';
-  },
+  interpretResponse: defaultInterpretResponse,
 };

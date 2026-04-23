@@ -112,6 +112,66 @@ async function callLLM(prompt: string, apiKey?: string, model?: string): Promise
   return data.choices[0]?.message?.content || '';
 }
 
+/** Strip markdown code fences from LLM output. */
+function stripCodeFences(text: string): string {
+  let out = text.trim();
+  if (out.startsWith('```json')) out = out.slice(7);
+  else if (out.startsWith('```')) out = out.slice(3);
+  if (out.endsWith('```')) out = out.slice(0, -3);
+  return out.trim();
+}
+
+/** Whether a provider string is a valid single-word identifier. */
+function isValidProvider(provider: string | null): provider is string {
+  return !!provider && provider !== 'unknown' && provider !== 'null' && provider !== 'unmatched' && !/\s/.test(provider);
+}
+
+/**
+ * Post-process raw LLM output into a clean result:
+ *  - Strips code fences, parses JSON
+ *  - Splits suggestions into valid vs invalid by provider
+ *  - Marks unregistered providers
+ *  - Recovers dropped env vars as unmatched
+ */
+function processLLMResponse(response: string, envVars: string[], providers: string[]): LLMAnalysisResult {
+  const jsonStr = stripCodeFences(response);
+  const raw = JSON.parse(jsonStr) as LLMAnalysisResult;
+
+  if (!raw.suggestions || !Array.isArray(raw.suggestions)) {
+    throw new Error('Invalid LLM response format');
+  }
+
+  // Partition into valid and invalid suggestions
+  const valid = raw.suggestions.filter(s => isValidProvider(s.provider));
+  const invalid = raw.suggestions.filter(s => !isValidProvider(s.provider));
+
+  // Mark suggestions whose provider isn't in the registry
+  const suggestions = valid.map(s => ({
+    ...s,
+    unregistered: !providers.includes(s.provider!),
+  }));
+
+  // Collect unmatched: from LLM + filtered-out invalid + dropped vars
+  const llmUnmatched: string[] = raw.unmatched ?? [];
+  const filteredOut = invalid.map(s => s.envVar);
+
+  const classified = new Set([
+    ...suggestions.map(s => s.envVar),
+    ...llmUnmatched,
+    ...filteredOut,
+  ]);
+  const dropped = envVars.filter(v => !classified.has(v));
+  if (dropped.length > 0) {
+    console.error(LOG_DIVIDER);
+    console.error(`[envguard] LLM dropped ${dropped.length} var(s) (not in suggestions or unmatched): ${dropped.join(', ')}`);
+  }
+
+  return {
+    suggestions,
+    unmatched: [...new Set([...llmUnmatched, ...filteredOut, ...dropped])],
+  };
+}
+
 export async function analyzeEnvVarsWithLLM(
   envVars: string[],
   apiKey?: string,
@@ -127,64 +187,7 @@ export async function analyzeEnvVarsWithLLM(
   console.error('[envguard] LLM response:', response);
 
   try {
-    // Extract JSON from response (handle markdown code blocks)
-    let jsonStr = response.trim();
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.slice(7);
-    }
-    if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.slice(3);
-    }
-    if (jsonStr.endsWith('```')) {
-      jsonStr = jsonStr.slice(0, -3);
-    }
-    jsonStr = jsonStr.trim();
-
-    const result = JSON.parse(jsonStr) as LLMAnalysisResult;
-
-    // Validate the result
-    if (!result.suggestions || !Array.isArray(result.suggestions)) {
-      throw new Error('Invalid LLM response format');
-    }
-
-    // Filter out invalid suggestions where provider is null, "unknown", or multi-word descriptions
-    // (the LLM should put these in unmatched, but enforce it as a safety net)
-    const validSuggestions = result.suggestions.filter(
-      s => s.provider && s.provider !== 'unknown' && s.provider !== 'null' && s.provider !== 'unmatched' && !/\s/.test(s.provider)
-    );
-    const invalidSuggestions = result.suggestions.filter(
-      s => !s.provider || s.provider === 'unknown' || s.provider === 'null' || s.provider === 'unmatched' || /\s/.test(s.provider || '')
-    );
-
-    // Mark suggestions whose provider isn't in the registry as unregistered
-    const allSuggestions = validSuggestions.map(s => ({
-      ...s,
-      unregistered: !providers.includes(s.provider!),
-    }));
-
-    // Collect unmatched: from LLM + any invalid suggestions we filtered out
-    const llmUnmatched = result.unmatched || [];
-    const filteredOut = invalidSuggestions.map(s => s.envVar);
-
-    // Safety net: catch any env vars the LLM completely dropped
-    // (not in suggestions AND not in unmatched)
-    const classified = new Set([
-      ...allSuggestions.map(s => s.envVar),
-      ...llmUnmatched,
-      ...filteredOut,
-    ]);
-    const dropped = envVars.filter(v => !classified.has(v));
-    if (dropped.length > 0) {
-      console.error(LOG_DIVIDER);
-      console.error(`[envguard] LLM dropped ${dropped.length} var(s) (not in suggestions or unmatched): ${dropped.join(', ')}`);
-    }
-
-    const allUnmatched = [...new Set([...llmUnmatched, ...filteredOut, ...dropped])];
-
-    return {
-      suggestions: allSuggestions,
-      unmatched: allUnmatched,
-    };
+    return processLLMResponse(response, envVars, providers);
   } catch (err) {
     throw new Error(
       `Failed to parse LLM response: ${err instanceof Error ? err.message : String(err)}\n` +

@@ -16,9 +16,7 @@ const ConfigSchema = z.object({
 export type KeyConfig = z.infer<typeof KeyConfigSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 
-const CONFIG_CANDIDATES = [
-  'envguard.json',
-];
+const DEFAULT_CONFIG_FILENAME = 'envguard.json';
 
 export const MANUAL_CONFIG_HINT =
   'Create envguard.json manually: https://github.com/ankitpandey2708/envguard#quick-start';
@@ -39,29 +37,26 @@ export async function loadConfig(configPath?: string): Promise<Config> {
       throw new ConfigError(`Config file not found: ${rawPath}`);
     }
   } else {
-    const found = CONFIG_CANDIDATES.find(name =>
-      existsSync(resolve(process.cwd(), name))
-    );
-    if (!found) {
+    const defaultPath = resolve(process.cwd(), DEFAULT_CONFIG_FILENAME);
+    if (!existsSync(defaultPath)) {
       throw new ConfigError(
         `No config file found. \n` +
         `Run 'npx envguard init --api-key <openrouter_key>' to auto-generate,\n` +
         `or ${MANUAL_CONFIG_HINT}`
       );
     }
-    rawPath = resolve(process.cwd(), found);
+    rawPath = defaultPath;
   }
 
   return parseConfigFile(rawPath);
 }
 
-async function parseConfigFile(filePath: string): Promise<Config> {
-  let raw: unknown;
-
+function parseConfigFile(filePath: string): Config {
   if (!filePath.endsWith('.json')) {
     throw new ConfigError(`Unsupported config file extension: ${filePath} (only .json is supported)`);
   }
 
+  let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(filePath, 'utf-8'));
   } catch (e) {

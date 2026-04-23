@@ -10,6 +10,13 @@ export interface ProviderSpec {
   interpretResponse(status: number): 'ok' | 'invalid' | 'denied' | 'unknown';
 }
 
+export function defaultInterpretResponse(status: number): 'ok' | 'invalid' | 'denied' | 'unknown' {
+  if (status === 200) return 'ok';
+  if (status === 401) return 'invalid';
+  if (status === 403) return 'denied';
+  return 'unknown';
+}
+
 // Lazy-loaded provider cache
 let _providers: Record<string, ProviderSpec> | null = null;
 

@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parseEnvFile, scanEnvFiles, ENV_FILE_PATTERNS } from './shared.js';
 import { analyzeEnvVarsWithLLM, type ProviderSuggestion } from '../core/llm.js';
 import { validateConfig, type Config, MANUAL_CONFIG_HINT } from '../core/config.js';
 
@@ -12,49 +13,12 @@ interface InitResult {
   status: InitStatus;
 }
 
-// Env file patterns to scan (production-only)
-const ENV_FILE_PATTERNS = [
-  '.env',
-  '.env.local',
-  '.env.production',
-  '.env.prod',
-];
-
-function scanEnvFiles(dir: string): string[] {
-  const found: string[] = [];
-  for (const name of ENV_FILE_PATTERNS) {
-    const path = resolve(dir, name);
-    if (existsSync(path)) {
-      found.push(path);
-    }
-  }
-  return found;
-}
-
-function parseEnvFile(filePath: string): string[] {
-  const content = readFileSync(filePath, 'utf-8');
-  const envVars: string[] = [];
-
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-    if (match) {
-      envVars.push(match[1]);
-    }
-  }
-
-  return envVars;
-}
-
-function getAllEnvVars(dir: string): Set<string> {
-  const envFiles = scanEnvFiles(dir);
+function getEnvVarNames(envFiles: string[]): Set<string> {
   const allEnvVars = new Set<string>();
   for (const file of envFiles) {
-    const vars = parseEnvFile(file);
-    for (const v of vars) {
-      allEnvVars.add(v);
+    const entries = parseEnvFile(file);
+    for (const e of entries) {
+      allEnvVars.add(e.key);
     }
   }
   return allEnvVars;
@@ -87,15 +51,79 @@ function buildNoKeysError(
   );
 }
 
-// Get current env vars from config
-function getConfigEnvVars(config: Config): Set<string> {
-  return new Set(config.keys.map(k => k.envVar));
+// Find env vars that are not yet tracked in the given config
+function findNewEnvVars(envVars: Set<string>, config: Config): string[] {
+  const configVars = new Set(config.keys.map(k => k.envVar));
+  return [...envVars].filter(v => !configVars.has(v));
 }
 
-// Find new env vars not in config
-function findNewEnvVars(envVars: Set<string>, config: Config): string[] {
-  const configVars = getConfigEnvVars(config);
-  return [...envVars].filter(v => !configVars.has(v));
+/** Try to load an existing config file; returns null if missing or malformed. */
+function tryLoadConfig(configPath: string): Config | null {
+  if (!existsSync(configPath)) return null;
+  try {
+    return validateConfig(JSON.parse(readFileSync(configPath, 'utf-8')));
+  } catch {
+    // Malformed config (zero keys, missing fields, bad JSON) — treat as no config
+    return null;
+  }
+}
+
+/** Create a fresh envguard.json with only registered providers. */
+function createNewConfig(
+  outPath: string,
+  registered: ProviderSuggestion[],
+  unregistered: ProviderSuggestion[],
+  unmatched: string[],
+): InitResult {
+  const config = {
+    concurrency: 5,
+    keys: registered.map(s => ({
+      envVar: s.envVar,
+      provider: s.provider!,
+    })),
+  };
+  writeFileSync(outPath, JSON.stringify(config, null, 2) + '\n');
+  return { matched: registered, unregistered, unmatched, status: 'created' };
+}
+
+/** Merge new registered keys into an existing config file. */
+function updateExistingConfig(
+  outPath: string,
+  existingConfig: Config,
+  registered: ProviderSuggestion[],
+  unregistered: ProviderSuggestion[],
+  unmatched: string[],
+  envFilesFound: string[],
+): InitResult {
+  if (registered.length === 0) {
+    // No new API keys found among the new vars.
+    // If config already has keys, just skip silently — it's fine.
+    // If config is empty, throw so the user knows.
+    if (existingConfig.keys.length === 0) {
+      throw buildNoKeysError(envFilesFound, unregistered, unmatched, false);
+    }
+    return { matched: [], unregistered, unmatched, status: 'updated' };
+  }
+
+  const existingKeys = existingConfig.keys.map(k => ({
+    envVar: k.envVar,
+    provider: k.provider,
+    required: k.required,
+  }));
+
+  const newKeys = registered.map(s => ({
+    envVar: s.envVar,
+    provider: s.provider!,
+    required: false, // New keys default to not required
+  }));
+
+  const mergedConfig = {
+    concurrency: existingConfig.concurrency,
+    keys: [...existingKeys, ...newKeys],
+  };
+
+  writeFileSync(outPath, JSON.stringify(mergedConfig, null, 2) + '\n');
+  return { matched: registered, unregistered, unmatched, status: 'updated' };
 }
 
 export async function initEnvguard(
@@ -107,42 +135,26 @@ export async function initEnvguard(
   const targetDir = dir || process.cwd();
   const outPath = outputPath || resolve(targetDir, 'envguard.json');
 
-  // Get all env vars from .env files
-  const allEnvVars = getAllEnvVars(targetDir);
+  // Scan env files once (used for both var extraction and error messages)
+  const envFilesFound = scanEnvFiles(targetDir);
 
-  if (allEnvVars.size === 0) {
+  if (envFilesFound.length === 0) {
     throw new Error(
       `No .env files found in ${targetDir}.\n` +
       `Searched for: ${ENV_FILE_PATTERNS.join(', ')}`
     );
   }
 
-  const envFilesFound = scanEnvFiles(targetDir);
+  const allEnvVars = getEnvVarNames(envFilesFound);
 
-  // Check if config file exists — if so, only send NEW vars to LLM
-  const configExists = existsSync(outPath);
-  let existingConfig: Config | null = null;
-  let varsToAnalyze: string[] = [...allEnvVars];  // default: analyze all vars
-
-  if (configExists) {
-    try {
-      const rawConfig = JSON.parse(readFileSync(outPath, 'utf-8'));
-      existingConfig = validateConfig(rawConfig);
-    } catch {
-      // Malformed config (zero keys, missing fields, bad JSON) — treat as no config, let init overwrite
-      existingConfig = null;
-    }
-  }
+  // Determine which vars need LLM analysis
+  const existingConfig = tryLoadConfig(outPath);
+  let varsToAnalyze: string[] = [...allEnvVars]; // default: analyze all vars
 
   if (existingConfig) {
     const newVars = findNewEnvVars(allEnvVars, existingConfig);
     if (newVars.length === 0) {
-      return {
-        matched: [],
-        unregistered: [],
-        unmatched: [],
-        status: 'skipped',
-      };
+      return { matched: [], unregistered: [], unmatched: [], status: 'skipped' };
     }
     varsToAnalyze = newVars;
   }
@@ -154,84 +166,22 @@ export async function initEnvguard(
     analysis = await analyzeEnvVarsWithLLM(varsToAnalyze, apiKey, model);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `Failed to initialize:\n` +
-      `${errorMsg}`
-    );
+    throw new Error(`Failed to initialize:\n${errorMsg}`);
   }
 
   // Separate suggestions into registered (to write in config) and unregistered (warnings only)
-  const suggestionsWithProvider = analysis.suggestions.filter(s => s.provider);
-  const registered = suggestionsWithProvider.filter(s => !s.unregistered);
-  const unregistered = suggestionsWithProvider.filter(s => s.unregistered);
+  const registered = analysis.suggestions.filter(s => s.provider && !s.unregistered);
+  const unregistered = analysis.suggestions.filter(s => s.provider && s.unregistered);
 
-  if (configExists && existingConfig) {
-    // MERGE: Update existing config with new vars
-    if (registered.length === 0) {
-      // No new API keys found among the new vars.
-      // If config already has keys, just skip silently — it's fine.
-      // If config is empty, throw so the user knows.
-      if (existingConfig.keys.length === 0) {
-        throw buildNoKeysError(envFilesFound, unregistered, analysis.unmatched, false);
-      }
-      return {
-        matched: [],
-        unregistered,
-        unmatched: analysis.unmatched,
-        status: 'updated',
-      };
-    }
-
-    // Merge: keep existing keys + add new registered ones
-    const existingKeys = existingConfig.keys.map(k => ({
-      envVar: k.envVar,
-      provider: k.provider,
-      required: k.required,
-    }));
-
-    const newKeys = registered.map(s => ({
-      envVar: s.envVar,
-      provider: s.provider!,
-      required: false, // New keys default to not required
-    }));
-
-    const mergedConfig = {
-      concurrency: existingConfig.concurrency,
-      keys: [...existingKeys, ...newKeys],
-    };
-
-    writeFileSync(outPath, JSON.stringify(mergedConfig, null, 2) + '\n');
-
-    return {
-      matched: registered,
-      unregistered,
-      unmatched: analysis.unmatched,
-      status: 'updated',
-    };
-  } else {
-    // CREATE: Fresh config — only include registered providers
-    if (registered.length === 0) {
-      throw buildNoKeysError(envFilesFound, unregistered, analysis.unmatched, !configExists);
-    }
-
-    // Write fresh config — only registered providers
-    const config = {
-      concurrency: 5,
-      keys: registered.map(s => ({
-        envVar: s.envVar,
-        provider: s.provider!,
-      })),
-    };
-
-    writeFileSync(outPath, JSON.stringify(config, null, 2) + '\n');
-
-    return {
-      matched: registered,
-      unregistered,
-      unmatched: analysis.unmatched,
-      status: 'created',
-    };
+  if (existingConfig) {
+    return updateExistingConfig(outPath, existingConfig, registered, unregistered, analysis.unmatched, envFilesFound);
   }
+
+  // CREATE: Fresh config — only include registered providers
+  if (registered.length === 0) {
+    throw buildNoKeysError(envFilesFound, unregistered, analysis.unmatched, true);
+  }
+  return createNewConfig(outPath, registered, unregistered, analysis.unmatched);
 }
 
 // Load env vars from .env files into process.env
@@ -242,36 +192,20 @@ export function loadEnvFiles(dir: string, config: Config): number {
   let loaded = 0;
 
   for (const file of envFiles) {
-    const content = readFileSync(file, 'utf-8');
+    const entries = parseEnvFile(file);
 
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      const eqIndex = trimmed.indexOf('=');
-      if (eqIndex === -1) continue;
-
-      const key = trimmed.slice(0, eqIndex).trim();
-
+    for (const e of entries) {
       // Only load vars that are declared in config
-      if (!configKeys.has(key)) {
+      if (!configKeys.has(e.key)) {
         continue;
       }
 
       // Don't overwrite existing env vars
-      if (key in process.env) {
+      if (e.key in process.env) {
         continue;
       }
 
-      let value = trimmed.slice(eqIndex + 1).trim();
-
-      // Remove surrounding quotes if present
-      if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-
-      process.env[key] = value;
+      process.env[e.key] = e.value;
       loaded++;
     }
   }

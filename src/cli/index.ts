@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { loadConfig, ConfigError, type Config } from '../core/config.js';
-import { validateEnv, type ValidationResult } from '../core/validator.js';
+import { validateEnv, type ValidationResult, type KeyStatus } from '../core/validator.js';
 import { initEnvguard, loadEnvFiles } from './init.js';
 
 const pkg = JSON.parse(
@@ -66,11 +66,16 @@ function parseArgs(argv: string[]): CliOptions {
   return opts;
 }
 
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    ok: 'OK', invalid: 'INVALID', denied: 'DENIED', missing: 'MISSING', unknown: 'UNKNOWN',
-  };
-  return labels[status] ?? status.toUpperCase();
+const STATUS_LABELS: Record<KeyStatus, string> = {
+  ok: 'OK',
+  invalid: 'INVALID',
+  denied: 'DENIED',
+  missing: 'MISSING',
+  unknown: 'UNKNOWN',
+};
+
+function statusLabel(status: KeyStatus): string {
+  return STATUS_LABELS[status];
 }
 
 function printHuman(result: ValidationResult): void {
@@ -98,16 +103,8 @@ function printHuman(result: ValidationResult): void {
   }
 }
 
-async function main(): Promise<void> {
-  const opts = parseArgs(process.argv);
-
-  if (opts.help || opts.command === 'help') {
-    process.stdout.write(HELP + '\n');
-    process.exit(0);
-  }
-
-  if (opts.command === 'init') {
-    const result = await initEnvguard(process.cwd(), opts.apiKey, undefined, opts.model);
+async function handleInitCommand(opts: CliOptions): Promise<void> {
+  const result = await initEnvguard(process.cwd(), opts.apiKey, undefined, opts.model);
     if (result.status === 'skipped') {
       process.stdout.write(`envguard v${VERSION} — init\n\n`);
       process.stdout.write(`No new env vars to add — envguard.json is up to date.\n`);
@@ -146,11 +143,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (opts.command && opts.command !== 'validate') {
-    process.stderr.write(`Unknown command: ${opts.command}\n\n${HELP}\n`);
-    process.exit(2);
-  }
-
+async function handleValidateCommand(opts: CliOptions): Promise<void> {
   let config: Config;
   try {
     config = await loadConfig(opts.config);
@@ -185,6 +178,27 @@ async function main(): Promise<void> {
   }
 
   process.exit(result.ok ? 0 : 1);
+}
+
+async function main(): Promise<void> {
+  const opts = parseArgs(process.argv);
+
+  if (opts.help || opts.command === 'help') {
+    process.stdout.write(HELP + '\n');
+    process.exit(0);
+  }
+
+  if (opts.command === 'init') {
+    await handleInitCommand(opts);
+    return;
+  }
+
+  if (opts.command && opts.command !== 'validate') {
+    process.stderr.write(`Unknown command: ${opts.command}\n\n${HELP}\n`);
+    process.exit(2);
+  }
+
+  await handleValidateCommand(opts);
 }
 
 main().catch(err => {

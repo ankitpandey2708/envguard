@@ -4,10 +4,10 @@
     "-lintignore"
   ],
   "entry": [
-    "src/cli/postinstall.ts",
-    "src/cli/postuninstall.ts"
+    "src/cli/postinstall.ts"
   ],
   "ignore": [
     "src/providers/**/*.ts"
-  ]
+  ],
+  "ignoreExportsUsedInFile": true
 }

@@ -1,6 +1,6 @@
 {
   "name": "@ankitpandey2708/envguard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Validate third-party API keys at deploy time — fail fast before bad keys reach production",
   "type": "module",
   "main": "dist/index.js",
@@ -22,8 +22,7 @@
     "dev": "tsc --watch",
     "test": "node --test dist/test/**/*.js",
     "knip": "knip",
-    "postinstall": "node dist/cli/postinstall.js",
-    "postuninstall": "node dist/cli/postuninstall.js"
+    "postinstall": "node dist/cli/postinstall.js"
   },
   "keywords": [
     "env",

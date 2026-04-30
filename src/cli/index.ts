@@ -3,6 +3,7 @@ import { loadConfig, ConfigError, type Config } from '../core/config.js';
 import { validateEnv, type ValidationResult, type KeyStatus } from '../core/validator.js';
 import { initEnvguard, loadEnvFiles } from './init.js';
 import { VERSION } from '../version.js';
+import { safeExit } from './shared.js';
 
 const HELP = `
 envguard v${VERSION} — validate API keys before deployment
@@ -106,7 +107,7 @@ async function handleInitCommand(opts: CliOptions): Promise<void> {
     if (result.status === 'skipped') {
       process.stdout.write(`envguard v${VERSION} — init\n\n`);
       process.stdout.write(`No new env vars to add — envguard.json is up to date.\n`);
-      process.exit(0);
+      return safeExit(0);
     }
     process.stdout.write(`envguard v${VERSION} — init\n\n`);
     process.stdout.write(`Found ${result.matched.length} API key(s):\n`);
@@ -138,7 +139,7 @@ async function handleInitCommand(opts: CliOptions): Promise<void> {
       process.stdout.write(`\nCreated envguard.json\n`);
     }
     process.stdout.write(`Run 'envguard validate' to test your keys.\n`);
-    process.exit(0);
+    return safeExit(0);
   }
 
 async function handleValidateCommand(opts: CliOptions): Promise<void> {
@@ -148,14 +149,14 @@ async function handleValidateCommand(opts: CliOptions): Promise<void> {
   } catch (err) {
     const msg = err instanceof ConfigError ? err.message : (err as Error).message;
     process.stderr.write(`[envguard] Config error: ${msg}\n`);
-    process.exit(2);
+    return safeExit(2);
   }
 
   if (opts.provider) config = { ...config, keys: config.keys.filter(k => k.provider === opts.provider) };
 
   if (config.keys.length === 0) {
     process.stderr.write('[envguard] No keys matched the given filters — nothing to validate.\n');
-    process.exit(2);
+    return safeExit(2);
   }
 
   // Auto-load only the env vars listed in config (minimal memory footprint)
@@ -166,7 +167,7 @@ async function handleValidateCommand(opts: CliOptions): Promise<void> {
     result = await validateEnv(config, { failFast: opts.failFast });
   } catch (err) {
     process.stderr.write(`[envguard] Error: ${(err as Error).message}\n`);
-    process.exit(2);
+    return safeExit(2);
   }
 
   if (opts.json) {
@@ -175,7 +176,7 @@ async function handleValidateCommand(opts: CliOptions): Promise<void> {
     printHuman(result);
   }
 
-  process.exit(result.ok ? 0 : 1);
+  return safeExit(result.ok ? 0 : 1);
 }
 
 async function main(): Promise<void> {
@@ -183,7 +184,7 @@ async function main(): Promise<void> {
 
   if (opts.help || opts.command === 'help') {
     process.stdout.write(HELP + '\n');
-    process.exit(0);
+    return safeExit(0);
   }
 
   if (opts.command === 'init') {
@@ -193,13 +194,13 @@ async function main(): Promise<void> {
 
   if (opts.command && opts.command !== 'validate') {
     process.stderr.write(`Unknown command: ${opts.command}\n\n${HELP}\n`);
-    process.exit(2);
+    return safeExit(2);
   }
 
-  await handleValidateCommand(opts);
+  return handleValidateCommand(opts);
 }
 
-main().catch(err => {
+main().catch(async err => {
   process.stderr.write(`[envguard] Unexpected error: ${(err as Error).message}\n`);
-  process.exit(2);
+  return safeExit(2);
 });

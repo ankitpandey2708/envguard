@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// undici is bundled with Node.js >= 18; no @types/node module path exists for it
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import { getGlobalDispatcher } from 'undici';
 
 /** Prefix prepended to the build script by postinstall. */
 export const GUARD_PREFIX = 'envguard validate && ';
@@ -77,6 +81,14 @@ export function readPackageJson(pkgPath: string): Record<string, unknown> | unde
   } catch {
     return undefined;
   }
+}
+
+// On Windows, calling process.exit() while undici's connection pool has open
+// libuv handles causes "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)".
+// Destroying the global dispatcher first closes those handles cleanly.
+export async function safeExit(code: number): Promise<never> {
+  try { await getGlobalDispatcher().destroy(); } catch { /* ignore */ }
+  process.exit(code);
 }
 
 export function parseEnvFile(filePath: string): EnvEntry[] {

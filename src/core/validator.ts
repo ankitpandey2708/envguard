@@ -1,5 +1,5 @@
 import { loadConfig, type Config, type KeyConfig } from './config.js';
-import { getProvider, listProviders } from './registry.js';
+import { loadProvidersByIds, listProvidersSync, type ProviderSpec } from './registry.js';
 import { httpRequest, type HttpRequest } from './httpClient.js';
 
 export type KeyStatus = 'ok' | 'invalid' | 'denied' | 'missing' | 'unknown';
@@ -20,9 +20,10 @@ export interface ValidationResult {
 }
 
 async function validateKey(
-  keyCfg: KeyConfig
+  keyCfg: KeyConfig,
+  provider: ProviderSpec,
+  signal?: AbortSignal,
 ): Promise<KeyValidationResult> {
-  const provider = await getProvider(keyCfg.provider);
   const envValue = process.env[keyCfg.envVar];
 
   if (!envValue) {
@@ -37,7 +38,7 @@ async function validateKey(
   }
 
   try {
-    const res = await httpRequest(req);
+    const res = await httpRequest(req, signal);
     const status = provider.interpretResponse(res.status);
     return {
       envVar: keyCfg.envVar,
@@ -72,14 +73,17 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   return results;
 }
 
-export async function validateEnv(config?: Config): Promise<ValidationResult> {
+export async function validateEnv(config?: Config, options?: { failFast?: boolean }): Promise<ValidationResult> {
   const cfg = config ?? await loadConfig();
   const { keys, concurrency } = cfg;
 
+  const neededIds = [...new Set(keys.map(k => k.provider))];
+  const providerMap = await loadProvidersByIds(neededIds);
+
   // Validate all providers exist — unregistered providers in config are a hard error
-  const available = await listProviders();
   for (const key of keys) {
-    if (!available.includes(key.provider)) {
+    if (!providerMap[key.provider]) {
+      const available = listProvidersSync();
       throw new Error(
         `Config references unregistered provider "${key.provider}" — cannot validate.\n` +
         `Registered providers: ${available.join(', ') || '(none)'}.\n` +
@@ -88,8 +92,27 @@ export async function validateEnv(config?: Config): Promise<ValidationResult> {
     }
   }
 
+  const failFastAc = new AbortController();
+  let fatalDetected = false;
+
   const results = await runConcurrent(
-    keys.map(key => () => validateKey(key)),
+    keys.map(key => async () => {
+      if (fatalDetected) {
+        return {
+          envVar: key.envVar,
+          provider: providerMap[key.provider].displayName,
+          status: 'unknown' as KeyStatus,
+          required: key.required,
+          message: 'skipped (fail-fast)',
+        };
+      }
+      const result = await validateKey(key, providerMap[key.provider], failFastAc.signal);
+      if (options?.failFast && key.required && (result.status === 'invalid' || result.status === 'denied' || result.status === 'missing')) {
+        fatalDetected = true;
+        failFastAc.abort();
+      }
+      return result;
+    }),
     concurrency
   );
 

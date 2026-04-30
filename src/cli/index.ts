@@ -1,13 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
 import { loadConfig, ConfigError, type Config } from '../core/config.js';
 import { validateEnv, type ValidationResult, type KeyStatus } from '../core/validator.js';
 import { initEnvguard, loadEnvFiles } from './init.js';
-
-const pkg = JSON.parse(
-  readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')
-) as { version: string };
-const VERSION = pkg.version;
+import { VERSION } from '../version.js';
 
 const HELP = `
 envguard v${VERSION} — validate API keys before deployment
@@ -24,6 +19,7 @@ Options:
   --provider <id>       only validate keys for a specific provider
   --api-key <key>       OpenRouter API key for init (or set OPENROUTER_API_KEY)
   --model <id>          OpenRouter model for init (or set OPENROUTER_MODEL; default: openrouter/free)
+  --fail-fast           stop after first required key failure
   --json                machine-readable JSON output
   -h, --help            show this help
 
@@ -39,13 +35,14 @@ interface CliOptions {
   provider?: string;
   apiKey?: string;
   model?: string;
+  failFast: boolean;
   json: boolean;
   help: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
   const args = argv.slice(2);
-  const opts: CliOptions = { command: '', json: false, help: false };
+  const opts: CliOptions = { command: '', failFast: false, json: false, help: false };
 
   if (args[0] && !args[0].startsWith('-')) {
     opts.command = args.shift()!;
@@ -57,6 +54,7 @@ function parseArgs(argv: string[]): CliOptions {
       case '--provider': opts.provider = args[++i]; break;
       case '--api-key': opts.apiKey = args[++i]; break;
       case '--model': opts.model = args[++i]; break;
+      case '--fail-fast': opts.failFast = true; break;
       case '--json': opts.json = true; break;
       case '--help':
       case '-h': opts.help = true; break;
@@ -165,7 +163,7 @@ async function handleValidateCommand(opts: CliOptions): Promise<void> {
 
   let result: ValidationResult;
   try {
-    result = await validateEnv(config);
+    result = await validateEnv(config, { failFast: opts.failFast });
   } catch (err) {
     process.stderr.write(`[envguard] Error: ${(err as Error).message}\n`);
     process.exit(2);

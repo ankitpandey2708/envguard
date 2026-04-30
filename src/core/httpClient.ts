@@ -9,11 +9,15 @@ interface HttpResponse {
   status: number;
 }
 
-export async function httpRequest(req: HttpRequest): Promise<HttpResponse> {
+export async function httpRequest(req: HttpRequest, signal?: AbortSignal, timeoutMs = 5000): Promise<HttpResponse> {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const combined = signal ? AbortSignal.any([timeout, signal]) : timeout;
+
   const res = await fetch(req.url, {
     method: req.method,
     headers: req.headers,
     body: req.body,
+    signal: combined,
   });
   // Drain the response body so the socket can be reused/closed promptly.
   // Without this, the underlying TCP handle stays open on Windows,

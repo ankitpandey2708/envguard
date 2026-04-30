@@ -1,5 +1,4 @@
-import type { ProviderSpec } from '../core/registry.js';
-import { defaultInterpretResponse } from '../core/registry.js';
+import { type ProviderSpec, defaultInterpretResponse } from '../core/registry.js';
 
 // Twilio auth token validation uses HTTP Basic auth: AccountSid:AuthToken.
 // Provide accountSid via the TWILIO_ACCOUNT_SID env var.

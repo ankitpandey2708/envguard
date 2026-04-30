@@ -1,5 +1,4 @@
-import type { ProviderSpec } from '../core/registry.js';
-import { defaultInterpretResponse } from '../core/registry.js';
+import { type ProviderSpec, defaultInterpretResponse } from '../core/registry.js';
 
 export const sarvamProvider: ProviderSpec = {
   id: 'sarvam',

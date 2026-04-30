@@ -1,17 +1,2 @@
-import type { ProviderSpec } from '../core/registry.js';
-import { defaultInterpretResponse } from '../core/registry.js';
-
-export const nvidiaProvider: ProviderSpec = {
-  id: 'nvidia',
-  displayName: 'NVIDIA NIM',
-  buildRequest(envValue) {
-    return {
-      url: 'https://integrate.api.nvidia.com/v1/models',
-      method: 'GET',
-      headers: {
-        'authorization': `Bearer ${envValue}`,
-      },
-    };
-  },
-  interpretResponse: defaultInterpretResponse,
-};
+import { bearerProvider } from './_helpers.js';
+export const nvidiaProvider = bearerProvider('nvidia', 'NVIDIA NIM', 'https://integrate.api.nvidia.com/v1/models');

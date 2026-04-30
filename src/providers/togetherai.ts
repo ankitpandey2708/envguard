@@ -1,17 +1,2 @@
-import type { ProviderSpec } from '../core/registry.js';
-import { defaultInterpretResponse } from '../core/registry.js';
-
-export const togetheraiProvider: ProviderSpec = {
-  id: 'togetherai',
-  displayName: 'Together AI',
-  buildRequest(envValue) {
-    return {
-      url: 'https://api.together.ai/v1/models',
-      method: 'GET',
-      headers: {
-        'authorization': `Bearer ${envValue}`,
-      },
-    };
-  },
-  interpretResponse: defaultInterpretResponse,
-};
+import { bearerProvider } from './_helpers.js';
+export const togetheraiProvider = bearerProvider('togetherai', 'Together AI', 'https://api.together.ai/v1/models');

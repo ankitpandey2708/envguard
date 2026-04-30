@@ -1,6 +1,6 @@
 {
   "name": "@ankitpandey2708/envguard",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Validate third-party API keys at deploy time — fail fast before bad keys reach production",
   "type": "module",
   "homepage": "https://github.com/ankitpandey2708/envguard#readme",
@@ -26,6 +26,7 @@
     "envguard": "dist/cli/index.js"
   },
   "scripts": {
+    "prebuild": "node scripts/gen-version.mjs",
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "node --test dist/test/**/*.js",
@@ -68,6 +69,10 @@
     "cerebras",
     "nvidia",
     "posthog",
+    "resend",
+    "loops",
+    "clerk",
+    "fingerprint",
     "typescript",
     "nodejs",
     "cli",

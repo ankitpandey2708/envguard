@@ -101,6 +101,7 @@ async function callLLM(prompt: string, apiKey?: string, model?: string): Promise
       ],
       temperature: 0,
     }),
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!response.ok) {

@@ -105,3 +105,32 @@ export async function listProviders(): Promise<string[]> {
   }
   return Object.keys(_providers!);
 }
+
+// Load only the provider IDs needed — avoids importing all provider files on validate
+export async function loadProvidersByIds(ids: string[]): Promise<Record<string, ProviderSpec>> {
+  if (_providers) {
+    return Object.fromEntries(ids.flatMap(id => _providers![id] ? [[id, _providers![id]]] : []));
+  }
+
+  const unique = [...new Set(ids)];
+  const entries = await Promise.all(
+    unique.map(async (id) => {
+      try {
+        const mod = await import(`../providers/${id}.js`) as Record<string, unknown>;
+        const provider = (mod[`${id}Provider`] ?? mod.provider ?? mod.default ??
+          Object.values(mod).find((v): v is ProviderSpec =>
+            v != null && typeof v === 'object' && 'id' in v && typeof (v as ProviderSpec).id === 'string'
+          )) as ProviderSpec | undefined;
+        return provider ? [id, provider] as const : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const loaded: Record<string, ProviderSpec> = {};
+  for (const e of entries) {
+    if (e) loaded[e[0]] = e[1];
+  }
+  return loaded;
+}

@@ -171,6 +171,12 @@ envguard validate --json
 | Stripe | `stripe` | `STRIPE_SECRET_KEY` — live account retrieval |
 | Twilio | `twilio` | `TWILIO_AUTH_TOKEN` + `TWILIO_ACCOUNT_SID` — live account call |
 | Sarvam AI | `sarvam` | `SARVAM_API_KEY` — live models list call |
+| Groq | `groq` | `GROQ_API_KEY` — live models list call |
+| Mistral | `mistral` | `MISTRAL_API_KEY` — live models list call |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` — live key info call |
+| Together AI | `togetherai` | `TOGETHER_API_KEY` — live models list call |
+| Cerebras | `cerebras` | `CEREBRAS_API_KEY` — live models list call |
+| NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` — live models list call |
 
 More providers coming. [Open an issue](https://github.com/ankitpandey2708/envguard/issues) to request one.
 

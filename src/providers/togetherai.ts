@@ -1,16 +1,15 @@
 import type { ProviderSpec } from '../core/registry.js';
 import { defaultInterpretResponse } from '../core/registry.js';
 
-export const anthropicProvider: ProviderSpec = {
-  id: 'anthropic',
-  displayName: 'Anthropic',
+export const togetheraiProvider: ProviderSpec = {
+  id: 'togetherai',
+  displayName: 'Together AI',
   buildRequest(envValue) {
     return {
-      url: 'https://api.anthropic.com/v1/models',
+      url: 'https://api.together.ai/v1/models',
       method: 'GET',
       headers: {
-        'x-api-key': envValue,
-        'anthropic-version': '2023-06-01',
+        'authorization': `Bearer ${envValue}`,
       },
     };
   },

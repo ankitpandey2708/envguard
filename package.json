@@ -3,6 +3,14 @@
   "version": "1.0.1",
   "description": "Validate third-party API keys at deploy time — fail fast before bad keys reach production",
   "type": "module",
+  "homepage": "https://github.com/ankitpandey2708/envguard#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ankitpandey2708/envguard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ankitpandey2708/envguard/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -26,14 +34,40 @@
   },
   "keywords": [
     "env",
+    "environment-variables",
+    "environment",
     "api-key",
+    "api-keys",
+    "api-key-validation",
+    "api-validation",
     "validation",
     "deployment",
     "preflight",
+    "preflight-check",
+    "fail-fast",
     "ci",
+    "ci-cd",
+    "github-actions",
+    "continuous-deployment",
+    "devops",
+    "build-tools",
+    "secrets",
+    "security",
+    "dotenv",
+    "dotenv-safe",
+    "openai",
+    "anthropic",
+    "stripe",
+    "twilio",
+    "gemini",
+    "sarvam",
+    "typescript",
+    "nodejs",
+    "cli",
     "vercel",
     "render",
-    "fly"
+    "fly",
+    "railway"
   ],
   "files": [
     "dist"

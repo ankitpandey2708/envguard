@@ -1,15 +1,21 @@
+[![npm version](https://img.shields.io/npm/v/@ankitpandey2708/envguard)](https://www.npmjs.com/package/@ankitpandey2708/envguard)
+[![npm downloads](https://img.shields.io/npm/dm/@ankitpandey2708/envguard)](https://www.npmjs.com/package/@ankitpandey2708/envguard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ankitpandey2708/envguard)
 
-# envguard
+# envguard — API Key Validator for CI/CD Deployments
 
-Validate API keys before deployment — catch revoked or misconfigured keys before they break production.
+**envguard** is a Node.js CLI and library that validates third-party API keys at deploy time. It makes a live request to each provider and fails your build immediately if a key is revoked, missing, or has the wrong permissions — before bad keys ever reach production.
+
+Works with OpenAI, Anthropic, Stripe, Twilio, Google Gemini, and more. Integrates with GitHub Actions, Vercel, Render, Railway, and Fly.io in one line.
 
 ## Why envguard?
 
 Most tools only check if an API key *exists*. They can't tell you if the key is actually valid.
 
 ```
-✓ Key exists          ← Most tools stop here
+✓ Key exists          ← dotenv, envalid, t3-env stop here
 ✗ Key is revoked      ← envguard catches this
 ✗ Key has wrong scope ← envguard catches this
 ```
@@ -157,14 +163,28 @@ envguard validate --json
 
 ## Supported providers
 
-| Provider | ID | Notes |
+| Provider | ID | What gets validated |
 |---|---|---|
-| OpenAI | `openai` | — |
-| Anthropic | `anthropic` | — |
-| Google Gemini | `gemini` | — |
-| Stripe | `stripe` | — |
-| Twilio | `twilio` | Requires `TWILIO_ACCOUNT_SID` env var |
-| Sarvam AI | `sarvam` | — |
+| OpenAI | `openai` | `OPENAI_API_KEY` — live models list call |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` — live models list call |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` — live models list call |
+| Stripe | `stripe` | `STRIPE_SECRET_KEY` — live account retrieval |
+| Twilio | `twilio` | `TWILIO_AUTH_TOKEN` + `TWILIO_ACCOUNT_SID` — live account call |
+| Sarvam AI | `sarvam` | `SARVAM_API_KEY` — live models list call |
+
+More providers coming. [Open an issue](https://github.com/ankitpandey2708/envguard/issues) to request one.
+
+## Comparison
+
+| Feature | envguard | envalid | t3-env | dotenv-safe |
+|---|---|---|---|---|
+| Checks key actually works | ✅ | ❌ | ❌ | ❌ |
+| Detects revoked keys | ✅ | ❌ | ❌ | ❌ |
+| Detects wrong permissions | ✅ | ❌ | ❌ | ❌ |
+| Auto-detect keys from .env | ✅ | ❌ | ❌ | ❌ |
+| CLI + programmatic API | ✅ | ❌ | ❌ | ❌ |
+| CI/CD integration | ✅ | ✅ | ✅ | ✅ |
+| TypeScript types | ✅ | ✅ | ✅ | ❌ |
 
 ## CI/CD
 

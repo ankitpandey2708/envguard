@@ -79,17 +79,19 @@ export function readPackageJson(pkgPath: string): Record<string, unknown> | unde
   }
 }
 
-// On Windows, calling process.exit() while undici's connection pool has open
-// libuv handles causes "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)".
-// Destroying the global dispatcher first closes those handles cleanly.
+// On Windows, process.exit() while undici has open libuv handles triggers
+// "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)".
+// Fix: set exitCode, destroy the dispatcher (closes all connections/timers),
+// then return — letting Node drain naturally instead of hard-exiting.
 // node:undici is public since Node.js v22; fall back to bare specifier for older versions.
 export async function safeExit(code: number): Promise<never> {
+  process.exitCode = code;
   try {
     // @ts-ignore
     const { getGlobalDispatcher } = await import('node:undici').catch(() => import('undici'));
     await getGlobalDispatcher().destroy();
   } catch { /* ignore */ }
-  process.exit(code);
+  return undefined as never;
 }
 
 export function parseEnvFile(filePath: string): EnvEntry[] {

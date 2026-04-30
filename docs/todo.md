@@ -14,3 +14,5 @@ npm run build
 
 # 4. Publish to npm
 npm publish
+
+if publish command fails: npm login

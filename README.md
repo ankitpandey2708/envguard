@@ -177,6 +177,7 @@ envguard validate --json
 | Together AI | `togetherai` | `TOGETHER_API_KEY` — live models list call |
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` — live models list call |
 | NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` — live models list call |
+| PostHog | `posthog` | `NEXT_PUBLIC_POSTHOG_KEY` — live decide call |
 
 More providers coming. [Open an issue](https://github.com/ankitpandey2708/envguard/issues) to request one.
 

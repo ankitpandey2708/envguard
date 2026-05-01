@@ -55,7 +55,7 @@ function discoverProviderIds(): string[] {
     const files = readdirSync(dir);
     // Support both source (.ts) and compiled (.js) environments
     const providerFiles = files.filter(f =>
-      (f.endsWith('.ts') || f.endsWith('.js')) && !f.startsWith('index.') && !f.includes('.d.') && !f.endsWith('.map')
+      (f.endsWith('.ts') || f.endsWith('.js')) && !f.startsWith('index.') && !f.startsWith('_') && !f.includes('.d.') && !f.endsWith('.map')
     );
     // Deduplicate by base name (e.g., gemini.ts and gemini.js → gemini)
     const seen = new Set<string>();

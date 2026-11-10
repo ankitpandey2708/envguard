@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loadConfig, ConfigError, type Config } from '../core/config.js';
-import { validateEnv, type ValidationResult, type KeyStatus } from '../core/validator.js';
-import { initEnvguard, loadEnvFiles } from './init.js';
+import { validateEnv, keyOutcome, type ValidationResult, type KeyStatus, type KeyOutcome } from '../core/validator.js';
+import { initEnvguard, loadEnvFiles, type InitResult, type InitStatus } from './init.js';
 import { VERSION } from '../version.js';
 import { safeExit } from './shared.js';
 
@@ -30,8 +30,14 @@ Exit codes:
   2  config or internal error
 `.trimStart();
 
+const COMMANDS = ['validate', 'init', 'help'] as const;
+type Command = typeof COMMANDS[number];
+
+/** Resolved command: a known one, or the raw unknown token (reported as an error). */
+type ParsedCommand = { kind: 'known'; name: Command } | { kind: 'unknown'; name: string };
+
 interface CliOptions {
-  command: string;
+  command: ParsedCommand;
   config?: string;
   provider?: string;
   apiKey?: string;
@@ -39,26 +45,39 @@ interface CliOptions {
   failFast: boolean;
   json: boolean;
   help: boolean;
+  /** Non-fatal parse problems (unknown flags, flags missing a value), printed to stderr. */
+  warnings: string[];
 }
+
+const VALUE_FLAGS = { '--config': 'config', '--provider': 'provider', '--api-key': 'apiKey', '--model': 'model' } as const;
+const BOOL_FLAGS = { '--fail-fast': 'failFast', '--json': 'json', '--help': 'help', '-h': 'help' } as const;
 
 function parseArgs(argv: string[]): CliOptions {
   const args = argv.slice(2);
-  const opts: CliOptions = { command: '', failFast: false, json: false, help: false };
+  const opts: CliOptions = { command: { kind: 'known', name: 'validate' }, failFast: false, json: false, help: false, warnings: [] };
 
   if (args[0] && !args[0].startsWith('-')) {
-    opts.command = args.shift()!;
+    const name = args.shift()!;
+    opts.command = (COMMANDS as readonly string[]).includes(name)
+      ? { kind: 'known', name: name as Command }
+      : { kind: 'unknown', name };
   }
 
   for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--config': opts.config = args[++i]; break;
-      case '--provider': opts.provider = args[++i]; break;
-      case '--api-key': opts.apiKey = args[++i]; break;
-      case '--model': opts.model = args[++i]; break;
-      case '--fail-fast': opts.failFast = true; break;
-      case '--json': opts.json = true; break;
-      case '--help':
-      case '-h': opts.help = true; break;
+    const arg = args[i];
+    if (arg in VALUE_FLAGS) {
+      const next = args[i + 1];
+      // A following flag is never a value: `--api-key --json` must not swallow --json.
+      if (next === undefined || next.startsWith('-')) {
+        opts.warnings.push(`${arg} expects a value — ignoring it`);
+        continue;
+      }
+      opts[VALUE_FLAGS[arg as keyof typeof VALUE_FLAGS]] = next;
+      i++;
+    } else if (arg in BOOL_FLAGS) {
+      opts[BOOL_FLAGS[arg as keyof typeof BOOL_FLAGS]] = true;
+    } else {
+      opts.warnings.push(`unknown option ${arg} — ignoring it (see --help)`);
     }
   }
 
@@ -73,6 +92,8 @@ const STATUS_LABELS: Record<KeyStatus, string> = {
   unknown: 'UNKNOWN',
 };
 
+const OUTCOME_SYMBOL: Record<KeyOutcome, string> = { passed: '✔', failed: '✖', warning: '!' };
+
 function statusLabel(status: KeyStatus): string {
   return STATUS_LABELS[status];
 }
@@ -81,7 +102,7 @@ function printHuman(result: ValidationResult): void {
   process.stdout.write(`envguard v${VERSION} — validating API keys...\n\n`);
 
   for (const key of [...result.passed, ...result.failed, ...result.warnings]) {
-    const sym = key.status === 'ok' ? '✔' : (!key.required ? '!' : '✖');
+    const sym = OUTCOME_SYMBOL[keyOutcome(key)];
     const detail = key.message ? ` – ${key.message}` : '';
     const tag = !key.required ? ' (optional)' : '';
     process.stdout.write(`${sym} ${key.envVar} (${key.provider}): ${statusLabel(key.status)}${detail}${tag}\n`);
@@ -102,45 +123,59 @@ function printHuman(result: ValidationResult): void {
   }
 }
 
+/** Closing line(s) for each init outcome. Record type forces a message for every status. */
+const INIT_FOOTER: Record<InitStatus, (r: InitResult) => string> = {
+  skipped: () => `No new env vars to add — envguard.json is up to date.\n`,
+  unchanged: () => `\nNo new API keys to add — envguard.json unchanged.\n`,
+  updated: r => `\nUpdated envguard.json (added ${r.matched.length} new key(s))\nRun 'envguard validate' to test your keys.\n`,
+  created: () => `\nCreated envguard.json\nRun 'envguard validate' to test your keys.\n`,
+};
+
 async function handleInitCommand(opts: CliOptions): Promise<void> {
-  const result = await initEnvguard(process.cwd(), opts.apiKey, undefined, opts.model);
-    if (result.status === 'skipped') {
-      process.stdout.write(`envguard v${VERSION} — init\n\n`);
-      process.stdout.write(`No new env vars to add — envguard.json is up to date.\n`);
-      return safeExit(0);
-    }
-    process.stdout.write(`envguard v${VERSION} — init\n\n`);
-    process.stdout.write(`Found ${result.matched.length} API key(s):\n`);
-    for (const key of result.matched) {
-      process.stdout.write(`  ${key.envVar} → ${key.provider}\n`);
-    }
-    if (result.unregistered.length > 0) {
-      const uniqueProviders = [...new Set(result.unregistered.map(s => s.provider!))];
-      process.stdout.write(`\n⚠ ${result.unregistered.length} key(s) use ${uniqueProviders.length} unregistered provider(s):\n`);
-      for (const provider of uniqueProviders) {
-        const keys = result.unregistered.filter(s => s.provider === provider);
-        process.stdout.write(`  ${provider} (${keys.length} key${keys.length === 1 ? '' : 's'}):\n`);
-        for (const k of keys) {
-          process.stdout.write(`    - ${k.envVar}\n`);
-        }
-      }
-      process.stdout.write(`  These keys were NOT added to envguard.json.\n`);
-      process.stdout.write(`  Request provider support: https://github.com/ankitpandey2708/envguard\n`);
-    }
-    if (result.unmatched.length > 0) {
-      process.stdout.write(`\nSkipped ${result.unmatched.length} non-API vars :\n`);
-      for (const v of result.unmatched) {
-        process.stdout.write(`  ${v}\n`);
-      }
-    }
-    if (result.status === 'updated') {
-      process.stdout.write(`\nUpdated envguard.json (added ${result.matched.length} new key(s))\n`);
-    } else {
-      process.stdout.write(`\nCreated envguard.json\n`);
-    }
-    process.stdout.write(`Run 'envguard validate' to test your keys.\n`);
-    return safeExit(0);
+  let result: InitResult;
+  try {
+    result = await initEnvguard(process.cwd(), opts.apiKey, undefined, opts.model);
+  } catch (err) {
+    process.stderr.write(`[envguard] Init error: ${(err as Error).message}\n`);
+    return safeExit(2);
   }
+
+  process.stdout.write(`envguard v${VERSION} — init\n\n`);
+  if (result.status !== 'skipped') printInitAnalysis(result);
+  process.stdout.write(INIT_FOOTER[result.status](result));
+  return safeExit(0);
+}
+
+function printInitAnalysis(result: InitResult): void {
+  const sections: string[] = [];
+
+  if (result.matched.length > 0) {
+    sections.push(
+      `Found ${result.matched.length} API key(s):\n` +
+      result.matched.map(k => `  ${k.envVar} → ${k.provider}\n`).join('')
+    );
+  }
+  if (result.unregistered.length > 0) {
+    const uniqueProviders = [...new Set(result.unregistered.map(s => s.provider!))];
+    let s = `⚠ ${result.unregistered.length} key(s) use ${uniqueProviders.length} unregistered provider(s):\n`;
+    for (const provider of uniqueProviders) {
+      const keys = result.unregistered.filter(k => k.provider === provider);
+      s += `  ${provider} (${keys.length} key${keys.length === 1 ? '' : 's'}):\n`;
+      s += keys.map(k => `    - ${k.envVar}\n`).join('');
+    }
+    s += `  These keys were NOT added to envguard.json.\n`;
+    s += `  Request provider support: https://github.com/ankitpandey2708/envguard\n`;
+    sections.push(s);
+  }
+  if (result.unmatched.length > 0) {
+    sections.push(
+      `Skipped ${result.unmatched.length} non-API vars :\n` +
+      result.unmatched.map(v => `  ${v}\n`).join('')
+    );
+  }
+
+  process.stdout.write(sections.join('\n'));
+}
 
 async function handleValidateCommand(opts: CliOptions): Promise<void> {
   let config: Config;
@@ -181,23 +216,29 @@ async function handleValidateCommand(opts: CliOptions): Promise<void> {
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv);
+  for (const w of opts.warnings) process.stderr.write(`[envguard] Warning: ${w}\n`);
 
-  if (opts.help || opts.command === 'help') {
+  // --help wins over any command, including an unknown one
+  if (opts.help) {
     process.stdout.write(HELP + '\n');
     return safeExit(0);
   }
 
-  if (opts.command === 'init') {
-    await handleInitCommand(opts);
-    return;
-  }
-
-  if (opts.command && opts.command !== 'validate') {
-    process.stderr.write(`Unknown command: ${opts.command}\n\n${HELP}\n`);
+  const { command } = opts;
+  if (command.kind === 'unknown') {
+    process.stderr.write(`Unknown command: ${command.name}\n\n${HELP}\n`);
     return safeExit(2);
   }
 
-  return handleValidateCommand(opts);
+  switch (command.name) {
+    case 'help':
+      process.stdout.write(HELP + '\n');
+      return safeExit(0);
+    case 'init':
+      return handleInitCommand(opts);
+    case 'validate':
+      return handleValidateCommand(opts);
+  }
 }
 
 main().catch(async err => {

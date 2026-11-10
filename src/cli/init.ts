@@ -2,11 +2,18 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseEnvFile, scanEnvFiles, ENV_FILE_PATTERNS } from './shared.js';
 import { analyzeEnvVarsWithLLM, type ProviderSuggestion } from '../core/llm.js';
-import { validateConfig, type Config, MANUAL_CONFIG_HINT } from '../core/config.js';
+import { validateConfig, type Config, ConfigError, MANUAL_CONFIG_HINT } from '../core/config.js';
 
-type InitStatus = 'created' | 'updated' | 'skipped';
+/**
+ * Outcome of `envguard init`:
+ *   created   — no usable config existed; wrote a fresh one
+ *   updated   — merged new registered keys into the existing config
+ *   unchanged — new env vars were analyzed but none were registered API keys; file untouched
+ *   skipped   — every env var is already in the config; LLM not called, file untouched
+ */
+export type InitStatus = 'created' | 'updated' | 'unchanged' | 'skipped';
 
-interface InitResult {
+export interface InitResult {
   matched: ProviderSuggestion[];
   unregistered: ProviderSuggestion[];
   unmatched: string[];
@@ -24,15 +31,13 @@ function getEnvVarNames(envFiles: string[]): Set<string> {
   return allEnvVars;
 }
 
-// Build error message when no registered API keys were found
-// manualHint is only shown when envguard.json doesn't exist yet (first-run scenario)
+// Build error message when no registered API keys were found on first run
 function buildNoKeysError(
   envFiles: string[],
   unregistered: ProviderSuggestion[],
   unmatched: string[],
-  manualHint: boolean
 ): Error {
-  const hint = manualHint ? `\n${MANUAL_CONFIG_HINT}` : '';
+  const hint = `\n${MANUAL_CONFIG_HINT}`;
   if (unregistered.length > 0) {
     const uniqueProviders = [...new Set(unregistered.map(s => s.provider!))];
     const total = unregistered.length + unmatched.length;
@@ -57,14 +62,36 @@ function findNewEnvVars(envVars: Set<string>, config: Config): string[] {
   return [...envVars].filter(v => !configVars.has(v));
 }
 
-/** Try to load an existing config file; returns null if missing or malformed. */
-function tryLoadConfig(configPath: string): Config | null {
-  if (!existsSync(configPath)) return null;
+/**
+ * State of the config file on disk before init writes anything:
+ *   missing — no file                                → create
+ *   empty   — valid JSON with an empty `keys` array  → create (nothing to lose)
+ *   valid   — passes schema validation               → update
+ *   invalid — anything else (bad JSON, bad fields)   → refuse; never overwrite user data
+ */
+type ExistingConfig =
+  | { state: 'missing' }
+  | { state: 'empty' }
+  | { state: 'valid'; config: Config }
+  | { state: 'invalid'; error: string };
+
+function readExistingConfig(configPath: string): ExistingConfig {
+  if (!existsSync(configPath)) return { state: 'missing' };
+
+  let raw: unknown;
   try {
-    return validateConfig(JSON.parse(readFileSync(configPath, 'utf-8')));
-  } catch {
-    // Malformed config (zero keys, missing fields, bad JSON) — treat as no config
-    return null;
+    raw = JSON.parse(readFileSync(configPath, 'utf-8'));
+  } catch (err) {
+    return { state: 'invalid', error: `not valid JSON (${(err as Error).message})` };
+  }
+
+  const keys = (raw as { keys?: unknown } | null)?.keys;
+  if (Array.isArray(keys) && keys.length === 0) return { state: 'empty' };
+
+  try {
+    return { state: 'valid', config: validateConfig(raw) };
+  } catch (err) {
+    return { state: 'invalid', error: (err as Error).message };
   }
 }
 
@@ -93,16 +120,10 @@ function updateExistingConfig(
   registered: ProviderSuggestion[],
   unregistered: ProviderSuggestion[],
   unmatched: string[],
-  envFilesFound: string[],
 ): InitResult {
   if (registered.length === 0) {
-    // No new API keys found among the new vars.
-    // If config already has keys, just skip silently — it's fine.
-    // If config is empty, throw so the user knows.
-    if (existingConfig.keys.length === 0) {
-      throw buildNoKeysError(envFilesFound, unregistered, unmatched, false);
-    }
-    return { matched: [], unregistered, unmatched, status: 'updated' };
+    // New vars were found, but none are registered API keys — leave the file alone.
+    return { matched: [], unregistered, unmatched, status: 'unchanged' };
   }
 
   const existingKeys = existingConfig.keys.map(k => ({
@@ -147,8 +168,16 @@ export async function initEnvguard(
 
   const allEnvVars = getEnvVarNames(envFilesFound);
 
+  const existing = readExistingConfig(outPath);
+  if (existing.state === 'invalid') {
+    throw new ConfigError(
+      `Existing ${outPath} is invalid: ${existing.error}\n` +
+      `Refusing to overwrite it. Fix the file, or delete it to regenerate from scratch.`
+    );
+  }
+  const existingConfig = existing.state === 'valid' ? existing.config : null;
+
   // Determine which vars need LLM analysis
-  const existingConfig = tryLoadConfig(outPath);
   let varsToAnalyze: string[] = [...allEnvVars]; // default: analyze all vars
 
   if (existingConfig) {
@@ -174,12 +203,12 @@ export async function initEnvguard(
   const unregistered = analysis.suggestions.filter(s => s.provider && s.unregistered);
 
   if (existingConfig) {
-    return updateExistingConfig(outPath, existingConfig, registered, unregistered, analysis.unmatched, envFilesFound);
+    return updateExistingConfig(outPath, existingConfig, registered, unregistered, analysis.unmatched);
   }
 
   // CREATE: Fresh config — only include registered providers
   if (registered.length === 0) {
-    throw buildNoKeysError(envFilesFound, unregistered, analysis.unmatched, true);
+    throw buildNoKeysError(envFilesFound, unregistered, analysis.unmatched);
   }
   return createNewConfig(outPath, registered, unregistered, analysis.unmatched);
 }

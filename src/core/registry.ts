@@ -17,36 +17,45 @@ export function defaultInterpretResponse(status: number): 'ok' | 'invalid' | 'de
   return 'unknown';
 }
 
-// Lazy-loaded provider cache
-let _providers: Record<string, ProviderSpec> | null = null;
+/**
+ * Full-registry cache lifecycle: `unloaded` → `loading` (promise shared by concurrent callers) → `ready`.
+ * `ready` is tracked separately so `listProvidersSync` can read it without awaiting.
+ */
+let loading: Promise<Record<string, ProviderSpec>> | null = null;
+let ready: Record<string, ProviderSpec> | null = null;
 
 function getProvidersDir(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   return join(__dirname, '../providers');
 }
 
-// Load all providers in parallel
-async function loadAllProviders(): Promise<Record<string, ProviderSpec>> {
-  const ids = discoverProviderIds();
-  
-  const results = await Promise.all(
-    ids.map(async (id) => {
-      const mod = await import(`../providers/${id}.js`) as Record<string, unknown>;
-      // Convention: each provider file exports `${id}Provider` (e.g. geminiProvider)
-      // Fall back to generic names, then scan all exports for a ProviderSpec shape
-      const provider = (mod[`${id}Provider`] ?? mod.provider ?? mod.default ??
-        Object.values(mod).find((v): v is ProviderSpec =>
-          v != null && typeof v === 'object' && 'id' in v && typeof (v as ProviderSpec).id === 'string'
-        )) as ProviderSpec | undefined;
-      return provider && typeof provider.id === 'string' ? [id, provider] as const : null;
-    })
-  );
-
-  const providers: Record<string, ProviderSpec> = {};
-  for (const r of results) {
-    if (r) providers[r[0]] = r[1];
+/**
+ * Import one provider module and find its spec.
+ * Convention: each provider file exports `${id}Provider` (e.g. geminiProvider);
+ * falls back to `provider` / default, then to any export shaped like a ProviderSpec.
+ * Returns null if the module is missing or exports no spec.
+ */
+async function importProvider(id: string): Promise<ProviderSpec | null> {
+  let mod: Record<string, unknown>;
+  try {
+    mod = await import(`../providers/${id}.js`) as Record<string, unknown>;
+  } catch {
+    return null;
   }
-  return providers;
+  const provider = (mod[`${id}Provider`] ?? mod.provider ?? mod.default ??
+    Object.values(mod).find((v): v is ProviderSpec =>
+      v != null && typeof v === 'object' && 'id' in v && typeof (v as ProviderSpec).id === 'string'
+    )) as ProviderSpec | undefined;
+  return provider && typeof provider.id === 'string' ? provider : null;
+}
+
+async function importProviders(ids: string[]): Promise<Record<string, ProviderSpec>> {
+  const entries = await Promise.all(ids.map(async id => [id, await importProvider(id)] as const));
+  const loaded: Record<string, ProviderSpec> = {};
+  for (const [id, provider] of entries) {
+    if (provider) loaded[id] = provider;
+  }
+  return loaded;
 }
 
 function discoverProviderIds(): string[] {
@@ -58,79 +67,50 @@ function discoverProviderIds(): string[] {
       (f.endsWith('.ts') || f.endsWith('.js')) && !f.startsWith('index.') && !f.startsWith('_') && !f.includes('.d.') && !f.endsWith('.map')
     );
     // Deduplicate by base name (e.g., gemini.ts and gemini.js → gemini)
-    const seen = new Set<string>();
-    return providerFiles
-      .map(f => f.replace(/\.(ts|js)$/, ''))
-      .filter(id => {
-        if (seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
+    return [...new Set(providerFiles.map(f => f.replace(/\.(ts|js)$/, '')))];
   } catch {
     return [];
   }
 }
 
+function loadAll(): Promise<Record<string, ProviderSpec>> {
+  loading ??= importProviders(discoverProviderIds()).then(map => (ready = map));
+  return loading;
+}
+
 // Synchronous access - discovers and returns provider IDs without loading full specs
 export function listProvidersSync(): string[] {
-  if (_providers) return Object.keys(_providers);
+  if (ready) return Object.keys(ready);
   return discoverProviderIds();
 }
 
 // Async access - initializes cache if needed
 export async function initProviders(): Promise<void> {
-  if (_providers) return;
-  _providers = await loadAllProviders();
+  await loadAll();
 }
 
 // Get a specific provider
 export async function getProvider(id: string): Promise<ProviderSpec> {
-  if (!_providers) {
-    await initProviders();
-  }
-  
-  const provider = _providers![id];
+  const providers = await loadAll();
+  const provider = providers[id];
   if (provider) return provider;
 
-  const available = Object.keys(_providers!);
+  const available = Object.keys(providers);
   throw new Error(
-    `Unknown provider: \"${id}\". Available: ${available.join(', ') || '(none)'}.`
+    `Unknown provider: "${id}". Available: ${available.join(', ') || '(none)'}.`
   );
 }
 
 // List all providers
 export async function listProviders(): Promise<string[]> {
-  if (!_providers) {
-    await initProviders();
-  }
-  return Object.keys(_providers!);
+  return Object.keys(await loadAll());
 }
 
 // Load only the provider IDs needed — avoids importing all provider files on validate
 export async function loadProvidersByIds(ids: string[]): Promise<Record<string, ProviderSpec>> {
-  if (_providers) {
-    return Object.fromEntries(ids.flatMap(id => _providers![id] ? [[id, _providers![id]]] : []));
+  if (ready) {
+    const cache = ready;
+    return Object.fromEntries(ids.flatMap(id => cache[id] ? [[id, cache[id]]] : []));
   }
-
-  const unique = [...new Set(ids)];
-  const entries = await Promise.all(
-    unique.map(async (id) => {
-      try {
-        const mod = await import(`../providers/${id}.js`) as Record<string, unknown>;
-        const provider = (mod[`${id}Provider`] ?? mod.provider ?? mod.default ??
-          Object.values(mod).find((v): v is ProviderSpec =>
-            v != null && typeof v === 'object' && 'id' in v && typeof (v as ProviderSpec).id === 'string'
-          )) as ProviderSpec | undefined;
-        return provider ? [id, provider] as const : null;
-      } catch {
-        return null;
-      }
-    })
-  );
-
-  const loaded: Record<string, ProviderSpec> = {};
-  for (const e of entries) {
-    if (e) loaded[e[0]] = e[1];
-  }
-  return loaded;
+  return importProviders([...new Set(ids)]);
 }

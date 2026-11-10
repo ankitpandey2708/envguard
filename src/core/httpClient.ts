@@ -9,7 +9,9 @@ interface HttpResponse {
   status: number;
 }
 
-export async function httpRequest(req: HttpRequest, signal?: AbortSignal, timeoutMs = 5000): Promise<HttpResponse> {
+export const HTTP_TIMEOUT_MS = 5000;
+
+export async function httpRequest(req: HttpRequest, signal?: AbortSignal, timeoutMs = HTTP_TIMEOUT_MS): Promise<HttpResponse> {
   const timeout = AbortSignal.timeout(timeoutMs);
   const combined = signal ? AbortSignal.any([timeout, signal]) : timeout;
 

@@ -63,6 +63,13 @@ Created envguard.json
 No new env vars to add — envguard.json is up to date.
 ```
 
+**Re-run (new vars, but none are API keys):**
+```
+No new API keys to add — envguard.json unchanged.
+```
+
+If an existing `envguard.json` is invalid (bad JSON or schema), `init` exits with code 2 and leaves the file untouched. Fix or delete it, then re-run.
+
 ### 3. Validate
 
 ```bash
@@ -119,6 +126,20 @@ Validates all keys in `envguard.json` against their live provider APIs.
 | DENIED | Key lacks required permissions |
 | UNKNOWN | Network error or provider issue |
 
+In `--json` output every key also carries a `reason`: the precise cause behind `status`.
+
+| `reason` | `status` | What to do |
+|---|---|---|
+| `http_ok` | `ok` | — |
+| `http_invalid` | `invalid` | Replace the key |
+| `http_denied` | `denied` | Grant the key the needed permissions |
+| `env_not_set` | `missing` | Set the env var |
+| `http_unexpected` | `unknown` | Provider returned an unexpected HTTP status; retry or check provider status |
+| `timeout` | `unknown` | Provider didn't answer within 5s; retry |
+| `network_error` | `unknown` | DNS/connection failure; check network, retry |
+| `request_build_failed` | `unknown` | Provider is misconfigured (e.g. Twilio needs `TWILIO_ACCOUNT_SID`); see `message` |
+| `skipped_fail_fast` | `unknown` | Not checked because `--fail-fast` stopped the run |
+
 **JSON output:**
 
 ```bash
@@ -129,10 +150,10 @@ envguard validate --json
 {
   "ok": false,
   "passed": [
-    { "envVar": "STRIPE_SECRET_KEY", "provider": "Stripe", "status": "ok", "required": true }
+    { "envVar": "STRIPE_SECRET_KEY", "provider": "Stripe", "status": "ok", "reason": "http_ok", "required": true }
   ],
   "failed": [
-    { "envVar": "OPENAI_API_KEY", "provider": "OpenAI", "status": "invalid", "required": true }
+    { "envVar": "OPENAI_API_KEY", "provider": "OpenAI", "status": "invalid", "reason": "http_invalid", "required": true, "message": "provider returned HTTP 401" }
   ],
   "warnings": []
 }

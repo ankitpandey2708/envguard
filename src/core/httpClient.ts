@@ -21,9 +21,11 @@ export async function httpRequest(req: HttpRequest, signal?: AbortSignal, timeou
     body: req.body,
     signal: combined,
   });
-  // Drain the response body so the socket can be reused/closed promptly.
-  // Without this, the underlying TCP handle stays open on Windows,
-  // causing a libuv assertion when process.exit() fires.
-  try { await res.text(); } catch { /* ignore body-read errors */ }
+  // Only the status matters: discard the body instead of downloading it (some providers
+  // return large model lists). Cancelling also releases the connection.
+  // Note: on Windows, calling process.exit() right after an HTTPS fetch can trip a libuv
+  // assertion in Node itself whether the body is read or cancelled — set process.exitCode
+  // instead (see safeExit).
+  try { await res.body?.cancel(); } catch { /* ignore */ }
   return { status: res.status };
 }

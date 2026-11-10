@@ -1,20 +1,26 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { z } from 'zod';
 
-const KeyConfigSchema = z.object({
-  envVar: z.string().min(1, 'envVar must not be empty'),
-  provider: z.string().min(1, 'provider must not be empty'),
-  required: z.boolean().default(true),
-});
+export interface KeyConfig {
+  envVar: string;
+  provider: string;
+  /** Default: true */
+  required: boolean;
+}
 
-const ConfigSchema = z.object({
-  keys: z.array(KeyConfigSchema).min(1, 'at least one key must be configured'),
-  concurrency: z.number().int().positive().default(5),
-});
+export interface Config {
+  keys: KeyConfig[];
+  /** Max provider requests in flight at once. Default: DEFAULT_CONCURRENCY */
+  concurrency: number;
+}
 
-export type KeyConfig = z.infer<typeof KeyConfigSchema>;
-export type Config = z.infer<typeof ConfigSchema>;
+export const DEFAULT_CONCURRENCY = 10;
+
+/** What callers may pass in: like `Config`, but defaulted fields are optional. */
+export interface ConfigInput {
+  keys: Array<Pick<KeyConfig, 'envVar' | 'provider'> & Partial<Pick<KeyConfig, 'required'>>>;
+  concurrency?: number;
+}
 
 const DEFAULT_CONFIG_FILENAME = 'envguard.json';
 
@@ -66,22 +72,79 @@ function parseConfigFile(filePath: string): Config {
   return validateConfig(raw);
 }
 
+// ---- schema validation (hand-rolled: a schema library cost ~150ms startup and 6MB install) ----
+
+interface Issue { path: string; message: string }
+
+function typeName(v: unknown): string {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  if (typeof v === 'number' && Number.isNaN(v)) return 'NaN';
+  return typeof v;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeName(v) === 'object';
+const expected = (type: string, v: unknown) => `Invalid input: expected ${type}, received ${typeName(v)}`;
+
+function checkNonEmptyString(v: unknown, path: string, field: string, issues: Issue[]): string {
+  if (typeof v !== 'string') issues.push({ path, message: expected('string', v) });
+  else if (v.length === 0) issues.push({ path, message: `${field} must not be empty` });
+  return v as string;
+}
+
+function parseKey(v: unknown, path: string, issues: Issue[]): KeyConfig {
+  if (!isObject(v)) {
+    issues.push({ path, message: expected('object', v) });
+    return undefined as never;
+  }
+  const envVar = checkNonEmptyString(v.envVar, `${path}.envVar`, 'envVar', issues);
+  const provider = checkNonEmptyString(v.provider, `${path}.provider`, 'provider', issues);
+  let required = true;
+  if (v.required !== undefined) {
+    if (typeof v.required !== 'boolean') issues.push({ path: `${path}.required`, message: expected('boolean', v.required) });
+    required = v.required as boolean;
+  }
+  return { envVar, provider, required };
+}
+
+function parseConfig(raw: unknown, issues: Issue[]): Config {
+  if (!isObject(raw)) {
+    issues.push({ path: '(root)', message: expected('object', raw) });
+    return undefined as never;
+  }
+
+  let keys: KeyConfig[] = [];
+  if (!Array.isArray(raw.keys)) issues.push({ path: 'keys', message: expected('array', raw.keys) });
+  else if (raw.keys.length === 0) issues.push({ path: 'keys', message: 'at least one key must be configured' });
+  else keys = raw.keys.map((k, i) => parseKey(k, `keys.${i}`, issues));
+
+  let concurrency = DEFAULT_CONCURRENCY;
+  const c = raw.concurrency;
+  if (c !== undefined) {
+    if (typeof c !== 'number' || !Number.isFinite(c)) issues.push({ path: 'concurrency', message: expected('number', c) });
+    else if (!Number.isInteger(c)) issues.push({ path: 'concurrency', message: expected('int', c) });
+    else if (c <= 0) issues.push({ path: 'concurrency', message: 'Too small: expected number to be >0' });
+    concurrency = c as number;
+  }
+
+  // Unknown fields are dropped, so the returned object only ever has the documented shape.
+  return { keys, concurrency };
+}
+
 export function validateConfig(raw: unknown): Config {
-  const result = ConfigSchema.safeParse(raw);
-  if (!result.success) {
-    const errors = result.error.issues
-      .map(e => `  - ${e.path.join('.') || '(root)'}: ${e.message}`)
-      .join('\n');
-    throw new ConfigError(`Invalid config:\n${errors}`);
+  const issues: Issue[] = [];
+  const config = parseConfig(raw, issues);
+  if (issues.length > 0) {
+    throw new ConfigError(`Invalid config:\n${issues.map(e => `  - ${e.path}: ${e.message}`).join('\n')}`);
   }
 
   const seen = new Set<string>();
-  for (const key of result.data.keys) {
+  for (const key of config.keys) {
     if (seen.has(key.envVar)) {
       throw new ConfigError(`Duplicate envVar in config: ${key.envVar}`);
     }
     seen.add(key.envVar);
   }
 
-  return result.data;
+  return config;
 }

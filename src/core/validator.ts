@@ -1,4 +1,4 @@
-import { loadConfig, type Config, type KeyConfig } from './config.js';
+import { loadConfig, validateConfig, type ConfigInput, type KeyConfig } from './config.js';
 import { loadProvidersByIds, listProvidersSync, type ProviderSpec } from './registry.js';
 import { httpRequest, HTTP_TIMEOUT_MS, type HttpRequest } from './httpClient.js';
 
@@ -134,8 +134,9 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   return results;
 }
 
-export async function validateEnv(config?: Config, options?: { failFast?: boolean }): Promise<ValidationResult> {
-  const cfg = config ?? await loadConfig();
+export async function validateEnv(config?: ConfigInput, options?: { failFast?: boolean }): Promise<ValidationResult> {
+  // A passed-in config gets the same checks and defaults (required, concurrency) as one loaded from disk.
+  const cfg = config ? validateConfig(config) : await loadConfig();
   const { keys, concurrency } = cfg;
 
   const neededIds = [...new Set(keys.map(k => k.provider))];

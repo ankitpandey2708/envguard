@@ -1,5 +1,5 @@
 {
-  "concurrency": 5,
+  "concurrency": 10,
   "keys": [
     {
       "envVar": "OPENAI_API_KEY",

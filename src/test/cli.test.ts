@@ -185,7 +185,7 @@ test('init: creates config with registered keys only', () => {
   assert.match(r.stdout, /1 key\(s\) use 1 unregistered provider\(s\):\n {2}foo \(1 key\):\n {4}- FOO_KEY\n/);
   assert.match(r.stdout, /Skipped 1 non-API vars :\n {2}OPENAI_MODEL\n/);
   assert.match(r.stdout, /Created envguard\.json\n/);
-  assert.deepEqual(JSON.parse(r.configFile!), { concurrency: 5, keys: [{ envVar: 'OPENAI_API_KEY', provider: 'openai' }] });
+  assert.deepEqual(JSON.parse(r.configFile!), { concurrency: 10, keys: [{ envVar: 'OPENAI_API_KEY', provider: 'openai' }] });
 });
 
 test('init: skipped when every env var is already configured (no LLM call)', () => {

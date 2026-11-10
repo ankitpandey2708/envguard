@@ -165,7 +165,7 @@ envguard validate --json
 
 ```json
 {
-  "concurrency": 5,
+  "concurrency": 10,
   "keys": [
     { "envVar": "OPENAI_API_KEY", "provider": "openai" },
     { "envVar": "STRIPE_SECRET_KEY", "provider": "stripe" },
@@ -176,7 +176,7 @@ envguard validate --json
 
 | Field | Description | Default |
 |---|---|---|
-| `concurrency` | Parallel checks to run | 5 |
+| `concurrency` | Parallel checks to run | 10 |
 | `keys[].envVar` | Environment variable name | — |
 | `keys[].provider` | Provider ID (see table below) | — |
 | `keys[].required` | Block deployment if key fails | `true` |
@@ -259,7 +259,7 @@ const result = await validateEnv(config, { failFast: true });
 
 if (!result.ok) {
   console.error('Key validation failed:', result.failed);
-  process.exit(1);
+  process.exitCode = 1; // prefer over process.exit(): on Windows, exiting right after HTTPS requests can crash Node
 }
 ```
 

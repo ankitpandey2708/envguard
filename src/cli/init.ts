@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseEnvFile, scanEnvFiles, ENV_FILE_PATTERNS } from './shared.js';
 import { analyzeEnvVarsWithLLM, type ProviderSuggestion } from '../core/llm.js';
-import { validateConfig, type Config, ConfigError, MANUAL_CONFIG_HINT } from '../core/config.js';
+import { validateConfig, type Config, ConfigError, MANUAL_CONFIG_HINT, DEFAULT_CONCURRENCY } from '../core/config.js';
 
 /**
  * Outcome of `envguard init`:
@@ -103,7 +103,7 @@ function createNewConfig(
   unmatched: string[],
 ): InitResult {
   const config = {
-    concurrency: 5,
+    concurrency: DEFAULT_CONCURRENCY,
     keys: registered.map(s => ({
       envVar: s.envVar,
       provider: s.provider!,
